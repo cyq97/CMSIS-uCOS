@@ -7,12 +7,8 @@ static uint8_t consumer_cb[sizeof(os_ucos2_thread_t)];
 #if defined(__GNUC__)
 __attribute__((aligned(8)))
 #endif
-static uint8_t producer_stack[512];
-
-#if defined(__GNUC__)
-__attribute__((aligned(8)))
-#endif
-static uint8_t consumer_stack[512];
+static uint64_t producer_stack[512 / sizeof(uint64_t)];
+static uint64_t consumer_stack[512 / sizeof(uint64_t)];
 
 /* 互斥量、信号量、消息队列、事件旗标、定时器控制块 */
 static uint8_t mutex_cb[sizeof(os_ucos2_mutex_t)];
