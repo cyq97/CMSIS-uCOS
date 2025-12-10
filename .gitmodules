@@ -4,3 +4,6 @@
 [submodule "libs/CMSIS-FreeRTOS"]
 	path = libs/CMSIS-FreeRTOS
 	url = https://github.com/ARM-software/CMSIS-FreeRTOS.git
+[submodule "libs/CMSIS_5"]
+	path = libs/CMSIS_5
+	url = https://github.com/ARM-software/CMSIS_5.git
