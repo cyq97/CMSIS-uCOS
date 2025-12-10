@@ -136,8 +136,6 @@ typedef struct os_ucos2_thread {
   osPriority_t      cmsis_prio;
   osThreadState_t   state;
   OS_EVENT         *join_sem;
-  OS_FLAG_GRP      *flags_grp;
-  uint32_t          flags_cached;
   os_ucos2_thread_mode_t mode;
   uint8_t           started;
   uint8_t           owns_cb_mem;

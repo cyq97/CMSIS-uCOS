@@ -20,8 +20,6 @@ static inline bool osUcos2SchedulerStarted(void) {
   return (OSRunning == OS_TRUE);
 }
 
-static const uint32_t os_ucos2_flag_mask = (uint32_t)((OS_FLAGS)-1);
-
 static void osUcos2ObjectInit(os_ucos2_object_t *object,
                               os_ucos2_object_type_t type,
                               const char *name,
@@ -182,11 +180,6 @@ static void osUcos2ThreadFreeResources(os_ucos2_thread_t *thread) {
   }
 
   INT8U err;
-  if (thread->flags_grp != NULL) {
-    (void)OSFlagDel(thread->flags_grp, OS_DEL_ALWAYS, &err);
-    thread->flags_grp = NULL;
-  }
-
   if (thread->join_sem != NULL) {
     (void)OSSemDel(thread->join_sem, OS_DEL_ALWAYS, &err);
     thread->join_sem = NULL;
@@ -216,45 +209,6 @@ void osUcos2ThreadCleanup(os_ucos2_thread_t *thread) {
   }
 
   osUcos2ThreadFreeResources(thread);
-}
-
-static bool osUcos2FlagsValid(uint32_t flags) {
-  if (flags == 0u) {
-    return false;
-  }
-  return ((flags & ~os_ucos2_flag_mask) == 0u);
-}
-
-static uint32_t osUcos2ThreadFlagsError(INT8U err) {
-  switch (err) {
-    case OS_ERR_FLAG_NOT_RDY:
-    case OS_ERR_PEND_ABORT:
-    case OS_ERR_PEND_LOCKED:
-      return osFlagsErrorResource;
-    case OS_ERR_FLAG_WAIT_TYPE:
-    case OS_ERR_FLAG_INVALID_PGRP:
-    case OS_ERR_EVENT_TYPE:
-      return osFlagsErrorParameter;
-    case OS_ERR_TIMEOUT:
-      return osFlagsErrorTimeout;
-    case OS_ERR_PEND_ISR:
-      return osFlagsErrorISR;
-    default:
-      return osFlagsErrorUnknown;
-  }
-}
-
-static INT8U osUcos2ThreadFlagsWaitType(uint32_t options) {
-  INT8U wait_type = (options & osFlagsWaitAll) ? OS_FLAG_WAIT_SET_ALL : OS_FLAG_WAIT_SET_ANY;
-  if ((options & osFlagsNoClear) == 0u) {
-    wait_type |= OS_FLAG_CONSUME;
-  }
-  return wait_type;
-}
-
-static bool osUcos2ThreadFlagsOptionsValid(uint32_t options) {
-  uint32_t allowed = osFlagsWaitAll | osFlagsNoClear;
-  return ((options & ~allowed) == 0u);
 }
 
 static os_ucos2_thread_t *osUcos2ThreadAlloc(const osThreadAttr_t *attr) {
@@ -491,16 +445,8 @@ osThreadId_t osThreadNew(osThreadFunc_t func, void *argument, const osThreadAttr
   thread->cmsis_prio = priority;
   thread->ucos_prio = ucos_prio;
   thread->state = osThreadReady;
-  thread->flags_grp = NULL;
   thread->join_sem = NULL;
   thread->mode = osUcos2ThreadDetached;
-
-  INT8U err;
-  thread->flags_grp = OSFlagCreate(0u, &err);
-  if ((thread->flags_grp == NULL) || (err != OS_ERR_NONE)) {
-    osUcos2ThreadFreeResources(thread);
-    return NULL;
-  }
 
   if ((thread->object.attr_bits & osThreadJoinable) != 0u) {
     thread->mode = osUcos2ThreadJoinable;
@@ -528,7 +474,7 @@ osThreadId_t osThreadNew(osThreadFunc_t func, void *argument, const osThreadAttr
   OS_STK *pbos = &stack_mem[stack_words - 1u];
 #endif
 
-  err = OSTaskCreateExt(osUcos2ThreadTrampoline,
+  INT8U err = OSTaskCreateExt(osUcos2ThreadTrampoline,
                         thread,
                         ptos,
                         ucos_prio,
