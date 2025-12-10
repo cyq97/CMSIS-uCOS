@@ -44,6 +44,14 @@ extern "C" {
 #error "Enable uCOS-II semaphores (OS_SEM_EN) for CMSIS semaphore API."
 #endif
 
+#if (OS_SEM_QUERY_EN < 1u)
+#error "Enable OSSemQuery (OS_SEM_QUERY_EN) for CMSIS semaphore API."
+#endif
+
+#if (OS_SEM_SET_EN < 1u)
+#error "Enable OSSemSet (OS_SEM_SET_EN) for CMSIS message queue reset support."
+#endif
+
 #if (OS_MUTEX_EN < 1u)
 #error "Enable uCOS-II mutexes (OS_MUTEX_EN) for CMSIS mutex API."
 #endif
@@ -54,6 +62,18 @@ extern "C" {
 
 #if (OS_Q_EN < 1u) || (OS_MAX_QS == 0u)
 #error "Enable uCOS-II queues (OS_Q_EN) for CMSIS message queue API."
+#endif
+
+#if (OS_Q_QUERY_EN < 1u)
+#error "Enable OSQQuery (OS_Q_QUERY_EN) for CMSIS message queue API."
+#endif
+
+#if (OS_Q_FLUSH_EN < 1u)
+#error "Enable OSQFlush (OS_Q_FLUSH_EN) for CMSIS message queue reset."
+#endif
+
+#if (OS_Q_DEL_EN < 1u)
+#error "Enable OSQDel (OS_Q_DEL_EN) for CMSIS message queue delete."
 #endif
 
 #if (OS_MEM_EN < 1u) || (OS_MAX_MEM_PART == 0u)
@@ -142,7 +162,7 @@ typedef struct os_ucos2_thread {
 
 typedef struct os_ucos2_timer {
   os_ucos2_object_t object;
-  void             *cb_mem;
+  OS_TMR           *ostmr;
   osTimerFunc_t     callback;
   void             *argument;
   osTimerType_t     type;
@@ -187,15 +207,8 @@ typedef struct os_ucos2_message_queue {
   OS_EVENT         *queue_event;
   OS_EVENT         *space_sem;
   void            **queue_storage;
-  uint8_t          *pool_mem;
-  uint16_t         *free_stack;
-  uint32_t          free_top;
-  uint32_t          block_size;
   uint32_t          msg_size;
   uint32_t          msg_count;
-  uint8_t           owns_cb_mem;
-  uint8_t           owns_storage;
-  uint8_t           owns_pool;
 } os_ucos2_message_queue_t;
 
 /*
