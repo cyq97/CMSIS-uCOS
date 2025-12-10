@@ -83,9 +83,6 @@ extern "C" {
 #define UCOS2_THREAD_DEFAULT_STACK   512u
 #endif
 
-struct os_ucos2_thread;
-typedef struct os_ucos2_thread os_ucos2_thread_t;
-
 /*
  * Helper structure used to maintain intrusive lists of CMSIS objects. The wrapper
  * keeps lightweight tracking information to enable enumeration and cleanup.
@@ -145,11 +142,11 @@ typedef struct os_ucos2_thread {
 
 typedef struct os_ucos2_timer {
   os_ucos2_object_t object;
-  OS_TMR           *ostmr;
+  void             *cb_mem;
   osTimerFunc_t     callback;
   void             *argument;
   osTimerType_t     type;
-  uint8_t           owns_cb_mem;
+  uint8_t           active;
 } os_ucos2_timer_t;
 
 typedef struct os_ucos2_event_flags {
