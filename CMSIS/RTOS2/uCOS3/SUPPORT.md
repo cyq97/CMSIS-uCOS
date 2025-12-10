@@ -18,3 +18,4 @@
 - 所有 CMSIS 对象（线程、互斥量、信号量、事件旗标、定时器、消息队列）都必须在 `osXxxAttr_t` 中提供静态控制块；封装层不会动态申请内存。
 - 消息队列仅传递指针；`timeout == 0` 时，所有同步原语遵循 CMSIS 立即返回语义，对应 `OS_OPT_PEND_NON_BLOCKING`。
 - 定时器 `ticks` 参数需大于 0；重复调用 `osTimerStart` 会自动更新 `OSTmr` 的延时/周期配置。
+- ISR 支持：中断上下文仅允许零超时的 `osSemaphoreAcquire`/`osMessageQueuePut/Get` 及 `osSemaphoreRelease`、`osEventFlagsSet/Clear` 等操作；创建/删除对象、`osTimer*`、`osMutex*`、`osEventFlagsWait` 等需要调度的 API 会返回 `osErrorISR`。

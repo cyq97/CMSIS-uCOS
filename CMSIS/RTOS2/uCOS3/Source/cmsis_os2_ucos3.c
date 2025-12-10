@@ -22,6 +22,10 @@ static inline bool osUcos3SchedulerRunning(void) {
   return (OSRunning == OS_STATE_OS_RUNNING);
 }
 
+static inline bool osUcos3IsrDisallowsWait(uint32_t timeout) {
+  return osUcos3IrqContext() && (timeout != 0u);
+}
+
 static void osUcos3ObjectInit(os_ucos3_object_t *object,
                               os_ucos3_object_type_t type,
                               const char *name,
@@ -881,6 +885,10 @@ static osStatus_t osUcos3MutexError(OS_ERR err) {
 }
 
 osMutexId_t osMutexNew(const osMutexAttr_t *attr) {
+  if (osUcos3IrqContext()) {
+    return NULL;
+  }
+
   if ((attr == NULL) ||
       (attr->cb_mem == NULL) ||
       (attr->cb_size < sizeof(os_ucos3_mutex_t))) {
@@ -929,6 +937,10 @@ osStatus_t osMutexAcquire(osMutexId_t mutex_id, uint32_t timeout) {
     return osErrorParameter;
   }
 
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
+  }
+
   OS_ERR err;
   OSMutexPend(&mutex->mutex,
               osUcos3PendTimeout(timeout),
@@ -948,6 +960,10 @@ osStatus_t osMutexRelease(osMutexId_t mutex_id) {
     return osErrorParameter;
   }
 
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
+  }
+
   OS_ERR err;
   OSMutexPost(&mutex->mutex, OS_OPT_POST_NONE, &err);
   return osUcos3MutexError(err);
@@ -955,7 +971,7 @@ osStatus_t osMutexRelease(osMutexId_t mutex_id) {
 
 osThreadId_t osMutexGetOwner(osMutexId_t mutex_id) {
   os_ucos3_mutex_t *mutex = osUcos3MutexFromId(mutex_id);
-  if ((mutex == NULL) || !mutex->created) {
+  if ((mutex == NULL) || !mutex->created || osUcos3IrqContext()) {
     return NULL;
   }
 
@@ -970,6 +986,10 @@ osStatus_t osMutexDelete(osMutexId_t mutex_id) {
   os_ucos3_mutex_t *mutex = osUcos3MutexFromId(mutex_id);
   if ((mutex == NULL) || !mutex->created) {
     return osErrorParameter;
+  }
+
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
   }
 
   OS_ERR err;
@@ -1002,6 +1022,10 @@ static osStatus_t osUcos3SemaphoreError(OS_ERR err) {
 osSemaphoreId_t osSemaphoreNew(uint32_t max_count,
                                uint32_t initial_count,
                                const osSemaphoreAttr_t *attr) {
+  if (osUcos3IrqContext()) {
+    return NULL;
+  }
+
   if ((attr == NULL) ||
       (attr->cb_mem == NULL) ||
       (attr->cb_size < sizeof(os_ucos3_semaphore_t)) ||
@@ -1037,6 +1061,10 @@ const char *osSemaphoreGetName(osSemaphoreId_t semaphore_id) {
 osStatus_t osSemaphoreAcquire(osSemaphoreId_t semaphore_id, uint32_t timeout) {
   os_ucos3_semaphore_t *sem = osUcos3SemaphoreFromId(semaphore_id);
   if ((sem == NULL) || !sem->created) {
+    return osErrorParameter;
+  }
+
+  if (osUcos3IsrDisallowsWait(timeout)) {
     return osErrorParameter;
   }
 
@@ -1081,6 +1109,10 @@ osStatus_t osSemaphoreDelete(osSemaphoreId_t semaphore_id) {
     return osErrorParameter;
   }
 
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
+  }
+
   OS_ERR err;
   OSSemDel(&sem->sem, OS_OPT_DEL_ALWAYS, &err);
   sem->created = false;
@@ -1106,6 +1138,10 @@ osTimerId_t osTimerNew(osTimerFunc_t func,
                        osTimerType_t type,
                        void *argument,
                        const osTimerAttr_t *attr) {
+  if (osUcos3IrqContext()) {
+    return NULL;
+  }
+
   if ((func == NULL) || (attr == NULL) ||
       (attr->cb_mem == NULL) ||
       (attr->cb_size < sizeof(os_ucos3_timer_t))) {
@@ -1163,6 +1199,10 @@ osStatus_t osTimerStart(osTimerId_t timer_id, uint32_t ticks) {
     return osErrorParameter;
   }
 
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
+  }
+
   osStatus_t stat = osUcos3TimerConfigure(timer, ticks);
   if (stat != osOK) {
     return stat;
@@ -1184,6 +1224,10 @@ osStatus_t osTimerStop(osTimerId_t timer_id) {
     return osErrorParameter;
   }
 
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
+  }
+
   OS_ERR err;
   OSTmrStop(&timer->timer, OS_OPT_TMR_NONE, NULL, &err);
   if (err != OS_ERR_NONE) {
@@ -1196,7 +1240,7 @@ osStatus_t osTimerStop(osTimerId_t timer_id) {
 
 uint32_t osTimerIsRunning(osTimerId_t timer_id) {
   os_ucos3_timer_t *timer = osUcos3TimerFromId(timer_id);
-  if (timer == NULL) {
+  if ((timer == NULL) || osUcos3IrqContext()) {
     return 0u;
   }
 
@@ -1215,6 +1259,10 @@ osStatus_t osTimerDelete(osTimerId_t timer_id) {
     return osErrorParameter;
   }
 
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
+  }
+
   OS_ERR err;
   OSTmrDel(&timer->timer, &err);
   timer->active = false;
@@ -1224,6 +1272,10 @@ osStatus_t osTimerDelete(osTimerId_t timer_id) {
 /* ==== Event Flags Management ==== */
 
 osEventFlagsId_t osEventFlagsNew(const osEventFlagsAttr_t *attr) {
+  if (osUcos3IrqContext()) {
+    return NULL;
+  }
+
   if ((attr == NULL) ||
       (attr->cb_mem == NULL) ||
       (attr->cb_size < sizeof(os_ucos3_event_flags_t))) {
@@ -1296,6 +1348,10 @@ uint32_t osEventFlagsWait(osEventFlagsId_t ef_id,
     return osFlagsErrorParameter;
   }
 
+  if (osUcos3IrqContext()) {
+    return (timeout == 0u) ? osFlagsErrorISR : osFlagsErrorParameter;
+  }
+
   OS_ERR err;
   OS_FLAGS result = OSFlagPend(&ef->grp,
                                (OS_FLAGS)flags,
@@ -1310,6 +1366,10 @@ osStatus_t osEventFlagsDelete(osEventFlagsId_t ef_id) {
   os_ucos3_event_flags_t *ef = osUcos3EventFlagsFromId(ef_id);
   if ((ef == NULL) || !ef->created) {
     return osErrorParameter;
+  }
+
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
   }
 
   OS_ERR err;
@@ -1347,6 +1407,10 @@ static osStatus_t osUcos3MessageQueueError(OS_ERR err) {
 osMessageQueueId_t osMessageQueueNew(uint32_t msg_count,
                                      uint32_t msg_size,
                                      const osMessageQueueAttr_t *attr) {
+  if (osUcos3IrqContext()) {
+    return NULL;
+  }
+
   if ((msg_count == 0u) ||
       (msg_size != sizeof(void *)) ||
       (attr == NULL) ||
@@ -1400,6 +1464,10 @@ osStatus_t osMessageQueuePut(osMessageQueueId_t mq_id,
     return osErrorParameter;
   }
 
+  if (osUcos3IsrDisallowsWait(timeout)) {
+    return osErrorParameter;
+  }
+
   void *message = *(void * const *)msg_ptr;
 
   OS_ERR err;
@@ -1437,6 +1505,10 @@ osStatus_t osMessageQueueGet(osMessageQueueId_t mq_id,
 
   os_ucos3_message_queue_t *mq = osUcos3MessageQueueFromId(mq_id);
   if ((mq == NULL) || !mq->created || (msg_ptr == NULL)) {
+    return osErrorParameter;
+  }
+
+  if (osUcos3IsrDisallowsWait(timeout)) {
     return osErrorParameter;
   }
 
@@ -1502,6 +1574,10 @@ osStatus_t osMessageQueueReset(osMessageQueueId_t mq_id) {
     return osErrorParameter;
   }
 
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
+  }
+
   OS_ERR err;
   OSQFlush(&mq->queue, &err);
   if (err != OS_ERR_NONE) {
@@ -1516,6 +1592,10 @@ osStatus_t osMessageQueueDelete(osMessageQueueId_t mq_id) {
   os_ucos3_message_queue_t *mq = osUcos3MessageQueueFromId(mq_id);
   if ((mq == NULL) || !mq->created) {
     return osErrorParameter;
+  }
+
+  if (osUcos3IrqContext()) {
+    return osErrorISR;
   }
 
   OS_ERR err;

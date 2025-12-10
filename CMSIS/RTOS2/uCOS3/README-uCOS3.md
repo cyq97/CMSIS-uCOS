@@ -32,6 +32,13 @@
 | 定时器 | `os_ucos3_timer_t` | `ticks > 0`；周期/一次性均可 |
 | 消息队列 | `os_ucos3_message_queue_t` (+ 内部 `OS_SEM`) | 只接受指针消息，容量由 `msg_count` 指定 |
 
+## 中断上下文支持
+
+- 查询类 API (`osKernelGetInfo/GetState/GetTick*`、`osThreadGetId/GetName`、`osXxxGetName`) 可直接在 ISR 中使用。
+- `osSemaphoreRelease`、`osEventFlagsSet/Clear` 以及 `osMessageQueuePut/Get` 在 ISR 中支持 **零超时** 非阻塞调用；资源不可用时返回 `osErrorResource`。
+- `osSemaphoreAcquire` 同样只允许在 ISR 内执行零超时尝试，`timeout > 0` 会立即返回 `osErrorParameter`。
+- 所有创建/删除对象、`osTimer*`、`osMutex*`、`osEventFlagsWait` 等需要调度的 API 在 ISR 中会返回 `osErrorISR`。
+
 ## 示例与移植资料
 
 - `examples/basic/main.c` 展示了如何在 uC/OS-III 中静态创建线程、互斥量、信号量、事件旗标、定时器与消息队列，构建简单的生产者/消费者场景。

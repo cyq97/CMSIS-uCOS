@@ -36,6 +36,10 @@
 - **Joinable 线程**：`attr_bits` 含 `osThreadJoinable` 时会创建内部 `OS_SEM`；线程退出后需要调用 `osThreadJoin` 以释放控制块上的同步资源。
 - **线程 Flags / 内存池**：尚未封装，相关 API 返回 `osFlagsErrorUnsupported` 或 `NULL`。
 - **Tick 频率**：`osKernelGetTickFreq()`/`osKernelGetSysTimerFreq()` 返回 `OS_CFG_TICK_RATE_HZ`，若 BSP 修改系统节拍需同步更新配置。
+- **ISR 调用**：
+  - 查询类 API 与 `osSemaphoreRelease/osEventFlagsSet/Clear` 可在 ISR 中调用；
+  - `osSemaphoreAcquire`、`osMessageQueuePut/Get` 仅在 `timeout == 0` 时支持 ISR 调用；资源不足返回 `osErrorResource`；
+  - 对象创建/删除、`osTimer*`、`osMutex*`、`osEventFlagsWait` 等带调度行为的 API 在 ISR 中将返回 `osErrorISR`。
 
 ## 4. 初始化流程
 
