@@ -1,3 +1,6 @@
 [submodule "libs/uC-OS2"]
 	path = libs/uC-OS2
 	url = https://github.com/weston-embedded/uC-OS2.git
+[submodule "libs/CMSIS-FreeRTOS"]
+	path = libs/CMSIS-FreeRTOS
+	url = https://github.com/ARM-software/CMSIS-FreeRTOS.git
