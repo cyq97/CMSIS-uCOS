@@ -33,6 +33,13 @@
 | 定时器 | `os_ucos2_timer_t` | `ticks` > 0；周期/一次性均可 |
 | 消息队列 | `os_ucos2_message_queue_t` + 指针数组 | `msg_size == sizeof(void*)` |
 
+## 中断上下文支持
+
+- 始终允许的查询类 API：`osKernelGetInfo/GetState/GetTick*`、`osThreadGetId/GetName`、以及 `osMutex/Semaphore/EventFlags/MessageQueue` 的 `GetName`。
+- `osSemaphoreRelease`、`osEventFlagsSet/Clear`、`osMessageQueuePut/Get` 在中断中可用，但 `timeout` 必须为 0；若资源不可用返回 `osErrorResource`。
+- `osSemaphoreAcquire` 仅在中断中支持零超时“尝试”模式；`timeout > 0` 会返回 `osErrorParameter`。
+- 任何会阻塞或创建/删除内核对象的 API（线程/定时器/互斥量/事件旗标/消息队列）在中断中都会返回 `osErrorISR`。
+
 ## 示例与移植指南
 
 - `examples/basic/main.c`：演示如何静态创建线程、互斥量、信号量、事件旗标、定时器及指针消息队列，构建生产者-消费者模型。

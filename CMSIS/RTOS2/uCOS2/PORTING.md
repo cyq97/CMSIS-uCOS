@@ -41,6 +41,10 @@ CMSIS attr 均需要提供 `cb_mem` 和其它缓冲：
 - **定时器**：`ticks` 参数必须 > 0；重复 `osTimerStart` 会先删除旧实例再启动新实例。
 - **线程 Flags API**：uC/OS-II 无对应概念，所有 `osThreadFlags*` 函数都会返回 `osFlagsErrorUnsupported`（已在 `SUPPORT.md` 说明）。
 - **内存池 (`osMemoryPool*`)**：因与 uC/OS-II 的内存管理差异较大，暂未提供封装。
+- **ISR 调用**：
+  - 查询类 API（`osKernelGetInfo/GetState/GetTick*`、`osThreadGetId/GetName`、`osXxxGetName`）以及 `osSemaphoreRelease/osEventFlagsSet/Clear` 可在中断中使用。
+  - `osSemaphoreAcquire` 与 `osMessageQueuePut/Get` 仅在 `timeout == 0` 的非阻塞模式下可在 ISR 调用；若资源不可用返回 `osErrorResource`。
+  - 创建/删除任意 CMSIS 对象、`osTimer*`、`osMutex*`、`osEventFlagsWait` 等依赖调度的 API 在 ISR 中会返回 `osErrorISR`。
 
 ## 4. 初始化流程
 
