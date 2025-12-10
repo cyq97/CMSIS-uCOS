@@ -83,6 +83,9 @@ extern "C" {
 #define UCOS2_THREAD_DEFAULT_STACK   512u
 #endif
 
+struct os_ucos2_thread;
+typedef struct os_ucos2_thread os_ucos2_thread_t;
+
 /*
  * Helper structure used to maintain intrusive lists of CMSIS objects. The wrapper
  * keeps lightweight tracking information to enable enumeration and cleanup.
@@ -124,7 +127,6 @@ typedef enum {
 
 typedef struct os_ucos2_thread {
   os_ucos2_object_t object;
-  os_ucos2_object_type_t type;
   osThreadFunc_t    entry;
   void             *argument;
   OS_TCB           *tcb;
@@ -149,19 +151,22 @@ typedef struct os_ucos2_timer {
   osTimerFunc_t     callback;
   void             *argument;
   osTimerType_t     type;
+  uint8_t           owns_cb_mem;
 } os_ucos2_timer_t;
 
 typedef struct os_ucos2_event_flags {
   os_ucos2_object_t object;
   OS_FLAG_GRP      *grp;
+  uint8_t           owns_cb_mem;
 } os_ucos2_event_flags_t;
 
 typedef struct os_ucos2_mutex {
   os_ucos2_object_t object;
   OS_EVENT         *event;
-  uint32_t          recursive;
-  uint32_t          lock_count;
-  struct os_ucos2_thread *owner;
+  uint8_t           recursive;
+  uint8_t           owns_cb_mem;
+  uint16_t          lock_count;
+  os_ucos2_thread_t *owner;
 } os_ucos2_mutex_t;
 
 typedef struct os_ucos2_semaphore {
@@ -169,24 +174,33 @@ typedef struct os_ucos2_semaphore {
   OS_EVENT         *event;
   uint32_t          max_count;
   uint32_t          initial_count;
+  uint8_t           owns_cb_mem;
 } os_ucos2_semaphore_t;
 
 typedef struct os_ucos2_memory_pool {
   os_ucos2_object_t object;
-  OS_MEM           *mem;
-  void             *pool_mem;
+  uint8_t          *pool_mem;
+  uint16_t         *free_stack;
   uint32_t          block_size;
   uint32_t          block_count;
-  uint32_t          alloc_count;
+  uint32_t          free_top;
+  uint8_t           owns_memory;
 } os_ucos2_memory_pool_t;
 
 typedef struct os_ucos2_message_queue {
   os_ucos2_object_t object;
   OS_EVENT         *queue_event;
+  OS_EVENT         *space_sem;
   void            **queue_storage;
-  os_ucos2_memory_pool_t data_pool;
+  uint8_t          *pool_mem;
+  uint16_t         *free_stack;
+  uint32_t          free_top;
+  uint32_t          block_size;
   uint32_t          msg_size;
   uint32_t          msg_count;
+  uint8_t           owns_cb_mem;
+  uint8_t           owns_storage;
+  uint8_t           owns_pool;
 } os_ucos2_message_queue_t;
 
 /*
