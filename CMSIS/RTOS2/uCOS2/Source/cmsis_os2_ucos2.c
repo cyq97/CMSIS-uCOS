@@ -20,6 +20,8 @@ static inline bool osUcos2SchedulerStarted(void) {
   return (OSRunning == OS_TRUE);
 }
 
+static const uint32_t os_ucos2_flag_mask = (uint32_t)((OS_FLAGS)-1);
+
 /* ==== Priority Mapping Helpers ==== */
 
 static const osPriority_t os_priority_lut[] = {
@@ -200,6 +202,45 @@ void osUcos2ThreadCleanup(os_ucos2_thread_t *thread) {
   }
 
   osUcos2ThreadFreeResources(thread);
+}
+
+static bool osUcos2FlagsValid(uint32_t flags) {
+  if (flags == 0u) {
+    return false;
+  }
+  return ((flags & ~os_ucos2_flag_mask) == 0u);
+}
+
+static uint32_t osUcos2ThreadFlagsError(INT8U err) {
+  switch (err) {
+    case OS_ERR_FLAG_NOT_RDY:
+    case OS_ERR_PEND_ABORT:
+    case OS_ERR_PEND_LOCKED:
+      return osFlagsErrorResource;
+    case OS_ERR_FLAG_WAIT_TYPE:
+    case OS_ERR_FLAG_INVALID_PGRP:
+    case OS_ERR_EVENT_TYPE:
+      return osFlagsErrorParameter;
+    case OS_ERR_TIMEOUT:
+      return osFlagsErrorTimeout;
+    case OS_ERR_PEND_ISR:
+      return osFlagsErrorISR;
+    default:
+      return osFlagsErrorUnknown;
+  }
+}
+
+static INT8U osUcos2ThreadFlagsWaitType(uint32_t options) {
+  INT8U wait_type = (options & osFlagsWaitAll) ? OS_FLAG_WAIT_SET_ALL : OS_FLAG_WAIT_SET_ANY;
+  if ((options & osFlagsNoClear) == 0u) {
+    wait_type |= OS_FLAG_CONSUME;
+  }
+  return wait_type;
+}
+
+static bool osUcos2ThreadFlagsOptionsValid(uint32_t options) {
+  uint32_t allowed = osFlagsWaitAll | osFlagsNoClear;
+  return ((options & ~allowed) == 0u);
 }
 
 static os_ucos2_thread_t *osUcos2ThreadAlloc(const osThreadAttr_t *attr) {
@@ -439,6 +480,7 @@ osThreadId_t osThreadNew(osThreadFunc_t func, void *argument, const osThreadAttr
   thread->state = osThreadReady;
   thread->flags_grp = NULL;
   thread->join_sem = NULL;
+  thread->mode = osUcos2ThreadDetached;
 
   INT8U err;
   thread->flags_grp = OSFlagCreate(0u, &err);
@@ -629,6 +671,35 @@ osStatus_t osThreadTerminate(osThreadId_t thread_id) {
   return osOK;
 }
 
+osStatus_t osThreadDetach(osThreadId_t thread_id) {
+  if (osUcos2IrqContext()) {
+    return osErrorISR;
+  }
+
+  os_ucos2_thread_t *thread = osUcos2ThreadFromId(thread_id);
+  if (thread == NULL) {
+    return osErrorParameter;
+  }
+
+  if (thread->mode != osUcos2ThreadJoinable) {
+    return osErrorResource;
+  }
+
+  INT8U err;
+  if (thread->join_sem != NULL) {
+    (void)OSSemDel(thread->join_sem, OS_DEL_ALWAYS, &err);
+    thread->join_sem = NULL;
+  }
+
+  thread->mode = osUcos2ThreadDetached;
+
+  if (thread->tcb == NULL) {
+    osUcos2ThreadFreeResources(thread);
+  }
+
+  return osOK;
+}
+
 osStatus_t osThreadJoin(osThreadId_t thread_id) {
   if (osUcos2IrqContext()) {
     return osErrorISR;
@@ -697,4 +768,107 @@ osStatus_t osDelayUntil(uint32_t ticks) {
   }
 
   return osDelay(ticks - now);
+}
+
+/* ==== Thread Flags ==== */
+
+uint32_t osThreadFlagsSet(osThreadId_t thread_id, uint32_t flags) {
+  os_ucos2_thread_t *thread = osUcos2ThreadFromId(thread_id);
+  if ((thread == NULL) || !osUcos2FlagsValid(flags) || (thread->flags_grp == NULL)) {
+    return osFlagsErrorParameter;
+  }
+
+  if (thread->tcb == NULL) {
+    return osFlagsErrorResource;
+  }
+
+  INT8U err;
+  OS_FLAGS result = OSFlagPost(thread->flags_grp, (OS_FLAGS)flags, OS_FLAG_SET, &err);
+  if (err != OS_ERR_NONE) {
+    return osUcos2ThreadFlagsError(err);
+  }
+
+  return (uint32_t)result;
+}
+
+uint32_t osThreadFlagsClear(uint32_t flags) {
+  if (osUcos2IrqContext()) {
+    return osFlagsErrorISR;
+  }
+
+  os_ucos2_thread_t *thread = osUcos2ThreadFromTcb(OSTCBCur);
+  if ((thread == NULL) || (thread->flags_grp == NULL) || !osUcos2FlagsValid(flags)) {
+    return osFlagsErrorParameter;
+  }
+
+  INT8U err;
+  OS_FLAGS current = OSFlagQuery(thread->flags_grp, &err);
+  if (err != OS_ERR_NONE) {
+    return osUcos2ThreadFlagsError(err);
+  }
+
+  (void)OSFlagPost(thread->flags_grp, (OS_FLAGS)flags, OS_FLAG_CLR, &err);
+  if (err != OS_ERR_NONE) {
+    return osUcos2ThreadFlagsError(err);
+  }
+
+  return (uint32_t)current;
+}
+
+uint32_t osThreadFlagsGet(void) {
+  if (osUcos2IrqContext()) {
+    return osFlagsErrorISR;
+  }
+
+  os_ucos2_thread_t *thread = osUcos2ThreadFromTcb(OSTCBCur);
+  if ((thread == NULL) || (thread->flags_grp == NULL)) {
+    return osFlagsErrorResource;
+  }
+
+  INT8U err;
+  OS_FLAGS flags = OSFlagQuery(thread->flags_grp, &err);
+  if (err != OS_ERR_NONE) {
+    return osUcos2ThreadFlagsError(err);
+  }
+
+  return (uint32_t)flags;
+}
+
+uint32_t osThreadFlagsWait(uint32_t flags, uint32_t options, uint32_t timeout) {
+  if (osUcos2IrqContext()) {
+    return osFlagsErrorISR;
+  }
+
+  if (!os_ucos2_kernel.initialized || !osUcos2SchedulerStarted()) {
+    return osFlagsErrorResource;
+  }
+
+  if (!osUcos2FlagsValid(flags) || !osUcos2ThreadFlagsOptionsValid(options)) {
+    return osFlagsErrorParameter;
+  }
+
+  os_ucos2_thread_t *thread = osUcos2ThreadFromTcb(OSTCBCur);
+  if ((thread == NULL) || (thread->flags_grp == NULL)) {
+    return osFlagsErrorResource;
+  }
+
+  INT8U wait_type = osUcos2ThreadFlagsWaitType(options);
+  INT8U err;
+  OS_FLAGS result = 0u;
+
+  if (timeout == 0u) {
+    result = OSFlagAccept(thread->flags_grp, (OS_FLAGS)flags, wait_type, &err);
+    if (err != OS_ERR_NONE) {
+      return osUcos2ThreadFlagsError(err);
+    }
+    return (uint32_t)result;
+  }
+
+  INT32U pend_timeout = (timeout == osWaitForever) ? 0u : timeout;
+  result = OSFlagPend(thread->flags_grp, (OS_FLAGS)flags, wait_type, pend_timeout, &err);
+  if (err != OS_ERR_NONE) {
+    return osUcos2ThreadFlagsError(err);
+  }
+
+  return (uint32_t)result;
 }

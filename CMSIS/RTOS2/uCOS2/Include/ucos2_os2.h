@@ -32,6 +32,14 @@ extern "C" {
 #error "Enable uCOS-II event flags (OS_FLAG_EN) for CMSIS thread/event flags support."
 #endif
 
+#if (OS_FLAG_ACCEPT_EN < 1u)
+#error "Enable OSFlagAccept (OS_FLAG_ACCEPT_EN) for CMSIS thread flags."
+#endif
+
+#if (OS_FLAG_QUERY_EN < 1u)
+#error "Enable OSFlagQuery (OS_FLAG_QUERY_EN) for CMSIS thread flags."
+#endif
+
 #if (OS_SEM_EN < 1u)
 #error "Enable uCOS-II semaphores (OS_SEM_EN) for CMSIS semaphore API."
 #endif
