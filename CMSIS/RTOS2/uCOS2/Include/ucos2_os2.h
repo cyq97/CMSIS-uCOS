@@ -94,13 +94,6 @@ extern "C" {
 #error "Not enough priority slots for CMSIS-RTOS2 mapping."
 #endif
 
-typedef struct os_ucos2_object {
-  struct os_ucos2_object *prev;
-  struct os_ucos2_object *next;
-  const char            *name;
-  uint32_t               attr_bits;
-} os_ucos2_object_t;
-
 typedef enum {
   osUcos2ObjectThread,
   osUcos2ObjectTimer,
@@ -110,6 +103,14 @@ typedef enum {
   osUcos2ObjectMemoryPool,
   osUcos2ObjectMessageQueue
 } os_ucos2_object_type_t;
+
+typedef struct os_ucos2_object {
+  struct os_ucos2_object *prev;
+  struct os_ucos2_object *next;
+  const char            *name;
+  uint32_t               attr_bits;
+  os_ucos2_object_type_t type;
+} os_ucos2_object_t;
 
 typedef struct os_ucos2_list {
   os_ucos2_object_t *head;
@@ -159,12 +160,15 @@ typedef struct os_ucos2_mutex {
   os_ucos2_object_t object;
   OS_EVENT         *event;
   uint32_t          recursive;
+  uint32_t          lock_count;
+  struct os_ucos2_thread *owner;
 } os_ucos2_mutex_t;
 
 typedef struct os_ucos2_semaphore {
   os_ucos2_object_t object;
   OS_EVENT         *event;
   uint32_t          max_count;
+  uint32_t          initial_count;
 } os_ucos2_semaphore_t;
 
 typedef struct os_ucos2_memory_pool {
@@ -173,6 +177,7 @@ typedef struct os_ucos2_memory_pool {
   void             *pool_mem;
   uint32_t          block_size;
   uint32_t          block_count;
+  uint32_t          alloc_count;
 } os_ucos2_memory_pool_t;
 
 typedef struct os_ucos2_message_queue {
@@ -206,6 +211,11 @@ void osUcos2ThreadListInsert(os_ucos2_thread_t *thread);
 void osUcos2ThreadListRemove(os_ucos2_thread_t *thread);
 void osUcos2ThreadCleanup(os_ucos2_thread_t *thread);
 void osUcos2ThreadJoinRelease(os_ucos2_thread_t *thread);
+os_ucos2_event_flags_t *osUcos2EventFlagsFromId(osEventFlagsId_t ef_id);
+os_ucos2_mutex_t *osUcos2MutexFromId(osMutexId_t mutex_id);
+os_ucos2_semaphore_t *osUcos2SemaphoreFromId(osSemaphoreId_t semaphore_id);
+os_ucos2_memory_pool_t *osUcos2MemoryPoolFromId(osMemoryPoolId_t mp_id);
+os_ucos2_message_queue_t *osUcos2MessageQueueFromId(osMessageQueueId_t mq_id);
 
 #ifdef __cplusplus
 }

@@ -22,6 +22,20 @@ static inline bool osUcos2SchedulerStarted(void) {
 
 static const uint32_t os_ucos2_flag_mask = (uint32_t)((OS_FLAGS)-1);
 
+static void osUcos2ObjectInit(os_ucos2_object_t *object,
+                              os_ucos2_object_type_t type,
+                              const char *name,
+                              uint32_t attr_bits) {
+  if (object == NULL) {
+    return;
+  }
+  object->prev = NULL;
+  object->next = NULL;
+  object->name = name;
+  object->attr_bits = attr_bits;
+  object->type = type;
+}
+
 /* ==== Priority Mapping Helpers ==== */
 
 static const osPriority_t os_priority_lut[] = {
@@ -82,7 +96,7 @@ os_ucos2_thread_t *osUcos2ThreadFromId(osThreadId_t thread_id) {
   }
 
   os_ucos2_thread_t *thread = (os_ucos2_thread_t *)thread_id;
-  if (thread->type != osUcos2ObjectThread) {
+  if (thread->object.type != osUcos2ObjectThread) {
     return NULL;
   }
 
@@ -258,11 +272,10 @@ static os_ucos2_thread_t *osUcos2ThreadAlloc(const osThreadAttr_t *attr) {
     thread->owns_cb_mem = 1u;
   }
 
-  thread->object.prev = NULL;
-  thread->object.next = NULL;
-  thread->object.attr_bits = (attr != NULL) ? attr->attr_bits : 0u;
-  thread->object.name = (attr != NULL) ? attr->name : NULL;
-  thread->type = osUcos2ObjectThread;
+  osUcos2ObjectInit(&thread->object,
+                    osUcos2ObjectThread,
+                    (attr != NULL) ? attr->name : NULL,
+                    (attr != NULL) ? attr->attr_bits : 0u);
   return thread;
 }
 
