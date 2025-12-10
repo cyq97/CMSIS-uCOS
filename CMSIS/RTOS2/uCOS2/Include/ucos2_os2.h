@@ -40,6 +40,10 @@ extern "C" {
 #error "Enable uCOS-II mutexes (OS_MUTEX_EN) for CMSIS mutex API."
 #endif
 
+#if (OS_TASK_CHANGE_PRIO_EN < 1u)
+#error "Enable OSTaskChangePrio() support (OS_TASK_CHANGE_PRIO_EN) for CMSIS priority control."
+#endif
+
 #if (OS_Q_EN < 1u) || (OS_MAX_QS == 0u)
 #error "Enable uCOS-II queues (OS_Q_EN) for CMSIS message queue API."
 #endif
@@ -56,7 +60,7 @@ extern "C" {
 #error "Enable scheduler lock support (OS_SCHED_LOCK_EN) for osKernelLock/osKernelUnlock."
 #endif
 
-#define UCOS2_PRIORITY_LEVELS          56u
+#define UCOS2_PRIORITY_LEVELS          50u
 #define UCOS2_PRIORITY_GUARD           3u    /* Reserve Idle, Stat, Timer slots */
 
 #if (OS_LOWEST_PRIO <= (UCOS2_PRIORITY_LEVELS + UCOS2_PRIORITY_GUARD))
@@ -65,6 +69,10 @@ extern "C" {
 
 #if !defined(OS_APP_HOOKS_EN) || (OS_APP_HOOKS_EN < 1u)
 #warning "OS_APP_HOOKS_EN is disabled: CMSIS wrapper will install its own hooks only."
+#endif
+
+#ifndef UCOS2_THREAD_DEFAULT_STACK
+#define UCOS2_THREAD_DEFAULT_STACK   512u
 #endif
 
 /*
@@ -121,7 +129,9 @@ typedef struct os_ucos2_thread {
   uint32_t          flags_cached;
   os_ucos2_thread_mode_t mode;
   uint8_t           started;
-  uint8_t           reserved[2];
+  uint8_t           owns_cb_mem;
+  uint8_t           owns_stack_mem;
+  uint8_t           reserved[1];
 } os_ucos2_thread_t;
 
 typedef struct os_ucos2_timer {
