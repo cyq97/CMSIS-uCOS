@@ -52,8 +52,16 @@ extern "C" {
 #error "Enable OSSemSet (OS_SEM_SET_EN) for CMSIS message queue reset support."
 #endif
 
+#if (OS_SEM_ACCEPT_EN < 1u)
+#error "Enable OSSemAccept (OS_SEM_ACCEPT_EN) for zero-time semaphore acquire."
+#endif
+
 #if (OS_MUTEX_EN < 1u)
 #error "Enable uCOS-II mutexes (OS_MUTEX_EN) for CMSIS mutex API."
+#endif
+
+#if (OS_MUTEX_ACCEPT_EN < 1u)
+#error "Enable OSMutexAccept (OS_MUTEX_ACCEPT_EN) for zero-time mutex acquire."
 #endif
 
 #if (OS_TASK_CHANGE_PRIO_EN < 1u)
@@ -74,6 +82,10 @@ extern "C" {
 
 #if (OS_Q_DEL_EN < 1u)
 #error "Enable OSQDel (OS_Q_DEL_EN) for CMSIS message queue delete."
+#endif
+
+#if (OS_Q_ACCEPT_EN < 1u)
+#error "Enable OSQAccept (OS_Q_ACCEPT_EN) for zero-time queue receive."
 #endif
 
 #if (OS_MEM_EN < 1u) || (OS_MAX_MEM_PART == 0u)

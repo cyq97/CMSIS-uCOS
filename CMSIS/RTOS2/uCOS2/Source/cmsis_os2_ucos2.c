@@ -824,6 +824,18 @@ osStatus_t osMutexAcquire(osMutexId_t mutex_id, uint32_t timeout) {
     return osErrorParameter;
   }
 
+  if (timeout == 0u) {
+    INT8U err;
+    BOOLEAN acquired = OSMutexAccept(mutex->event, &err);
+    if ((acquired == OS_TRUE) && (err == OS_ERR_NONE)) {
+      return osOK;
+    }
+    if (err == OS_ERR_NONE) {
+      return osErrorResource;
+    }
+    return osUcos2MutexError(err);
+  }
+
   INT32U pend_timeout = (timeout == osWaitForever) ? 0u : timeout;
   INT8U err;
   (void)OSMutexPend(mutex->event, pend_timeout, &err);
@@ -920,6 +932,13 @@ osStatus_t osSemaphoreAcquire(osSemaphoreId_t semaphore_id, uint32_t timeout) {
   os_ucos2_semaphore_t *sem = osUcos2SemaphoreFromId(semaphore_id);
   if (sem == NULL) {
     return osErrorParameter;
+  }
+
+  if (timeout == 0u) {
+    if (OSSemAccept(sem->event) > 0u) {
+      return osOK;
+    }
+    return osErrorResource;
   }
 
   INT32U pend_timeout = (timeout == osWaitForever) ? 0u : timeout;
@@ -1175,6 +1194,20 @@ osStatus_t osMessageQueuePut(osMessageQueueId_t mq_id,
   }
 
   void *message = *(void * const *)msg_ptr;
+  if (timeout == 0u) {
+    if (OSSemAccept(mq->space_sem) == 0u) {
+      return osErrorResource;
+    }
+
+    INT8U err = OSQPost(mq->queue_event, message);
+    if (err != OS_ERR_NONE) {
+      (void)OSSemPost(mq->space_sem);
+      return osUcos2MessageQueueError(err);
+    }
+
+    return osOK;
+  }
+
   INT32U pend_timeout = (timeout == osWaitForever) ? 0u : timeout;
   INT8U err;
 
@@ -1202,6 +1235,20 @@ osStatus_t osMessageQueueGet(osMessageQueueId_t mq_id,
     return osErrorParameter;
   }
 
+  if (timeout == 0u) {
+    INT8U err;
+    void *message = OSQAccept(mq->queue_event, &err);
+    if (err != OS_ERR_NONE) {
+      return osUcos2MessageQueueError(err);
+    }
+    err = OSSemPost(mq->space_sem);
+    if (err != OS_ERR_NONE) {
+      return osUcos2SemaphoreError(err);
+    }
+    *(void **)msg_ptr = message;
+    return osOK;
+  }
+
   INT32U pend_timeout = (timeout == osWaitForever) ? 0u : timeout;
   INT8U err;
   void *message = OSQPend(mq->queue_event, pend_timeout, &err);
@@ -1209,7 +1256,11 @@ osStatus_t osMessageQueueGet(osMessageQueueId_t mq_id,
     return osUcos2MessageQueueError(err);
   }
 
-  (void)OSSemPost(mq->space_sem);
+  err = OSSemPost(mq->space_sem);
+  if (err != OS_ERR_NONE) {
+    return osUcos2SemaphoreError(err);
+  }
+
   *(void **)msg_ptr = message;
   return osOK;
 }
