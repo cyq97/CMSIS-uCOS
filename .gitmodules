@@ -7,3 +7,7 @@
 [submodule "libs/CMSIS_5"]
 	path = libs/CMSIS_5
 	url = https://github.com/ARM-software/CMSIS_5.git
+[submodule "libs/uC-OS3"]
+	path = libs/uC-OS3
+	url = https://github.com/weston-embedded/uC-OS3.git
+	branch = master
