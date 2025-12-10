@@ -1,10 +1,3 @@
-static os_ucos2_event_flags_t *osUcos2EventFlagsFromId(osEventFlagsId_t ef_id) {
-  if (ef_id == NULL) {
-    return NULL;
-  }
-  os_ucos2_event_flags_t *ef = (os_ucos2_event_flags_t *)ef_id;
-  return (ef->object.type == osUcos2ObjectEventFlags) ? ef : NULL;
-}
 #include <string.h>
 
 #include "ucos2_os2.h"
@@ -38,6 +31,49 @@ static void osUcos2ObjectInit(os_ucos2_object_t *object,
   object->name = name;
   object->attr_bits = attr_bits;
   object->type = type;
+}
+
+static const uint32_t os_ucos2_flag_mask = (uint32_t)((OS_FLAGS)-1);
+
+static bool osUcos2FlagsValid(uint32_t flags) {
+  if (flags == 0u) {
+    return false;
+  }
+  return ((flags & ~os_ucos2_flag_mask) == 0u);
+}
+
+static bool osUcos2FlagsOptionsValid(uint32_t options) {
+  const uint32_t allowed = osFlagsWaitAll | osFlagsNoClear;
+  return ((options & ~allowed) == 0u);
+}
+
+static INT8U osUcos2FlagsWaitType(uint32_t options) {
+  INT8U wait_type = (options & osFlagsWaitAll) ? OS_FLAG_WAIT_SET_ALL : OS_FLAG_WAIT_SET_ANY;
+  if ((options & osFlagsNoClear) == 0u) {
+    wait_type |= OS_FLAG_CONSUME;
+  }
+  return wait_type;
+}
+
+static uint32_t osUcos2EventFlagsError(INT8U err) {
+  switch (err) {
+    case OS_ERR_NONE:
+      return 0u;
+    case OS_ERR_TIMEOUT:
+      return osFlagsErrorTimeout;
+    case OS_ERR_PEND_ISR:
+      return osFlagsErrorISR;
+    case OS_ERR_FLAG_NOT_RDY:
+    case OS_ERR_PEND_ABORT:
+    case OS_ERR_PEND_LOCKED:
+      return osFlagsErrorResource;
+    case OS_ERR_FLAG_INVALID_PGRP:
+    case OS_ERR_EVENT_TYPE:
+    case OS_ERR_FLAG_WAIT_TYPE:
+      return osFlagsErrorParameter;
+    default:
+      return osFlagsErrorUnknown;
+  }
 }
 
 /* ==== Priority Mapping Helpers ==== */
@@ -210,6 +246,14 @@ static os_ucos2_message_queue_t *osUcos2MessageQueueFromId(osMessageQueueId_t mq
   }
   os_ucos2_message_queue_t *mq = (os_ucos2_message_queue_t *)mq_id;
   return (mq->object.type == osUcos2ObjectMessageQueue) ? mq : NULL;
+}
+
+static os_ucos2_event_flags_t *osUcos2EventFlagsFromId(osEventFlagsId_t ef_id) {
+  if (ef_id == NULL) {
+    return NULL;
+  }
+  os_ucos2_event_flags_t *ef = (os_ucos2_event_flags_t *)ef_id;
+  return (ef->object.type == osUcos2ObjectEventFlags) ? ef : NULL;
 }
 
 static void osUcos2ThreadFreeResources(os_ucos2_thread_t *thread) {
@@ -644,6 +688,45 @@ osStatus_t osThreadTerminate(osThreadId_t thread_id) {
   osUcos2ThreadJoinRelease(thread);
   osUcos2ThreadCleanup(thread);
   return osOK;
+}
+
+osStatus_t osThreadSuspend(osThreadId_t thread_id) {
+  if (osUcos2IrqContext()) {
+    return osErrorISR;
+  }
+
+  os_ucos2_thread_t *thread = (thread_id == NULL)
+                              ? osUcos2ThreadFromTcb(OSTCBCur)
+                              : osUcos2ThreadFromId(thread_id);
+  if (thread == NULL) {
+    return osErrorParameter;
+  }
+
+  if (thread->tcb == NULL) {
+    return osErrorResource;
+  }
+
+  INT8U target_prio = (thread->tcb == OSTCBCur) ? OS_PRIO_SELF : thread->ucos_prio;
+  INT8U err = OSTaskSuspend(target_prio);
+  return (err == OS_ERR_NONE) ? osOK : osErrorResource;
+}
+
+osStatus_t osThreadResume(osThreadId_t thread_id) {
+  if (osUcos2IrqContext()) {
+    return osErrorISR;
+  }
+
+  os_ucos2_thread_t *thread = osUcos2ThreadFromId(thread_id);
+  if (thread == NULL) {
+    return osErrorParameter;
+  }
+
+  if (thread->tcb == NULL) {
+    return osErrorResource;
+  }
+
+  INT8U err = OSTaskResume(thread->ucos_prio);
+  return (err == OS_ERR_NONE) ? osOK : osErrorResource;
 }
 
 osStatus_t osThreadDetach(osThreadId_t thread_id) {
@@ -1120,6 +1203,110 @@ osStatus_t osTimerDelete(osTimerId_t timer_id) {
   }
 
   return osUcos2TimerDeleteInternal(timer);
+}
+
+/* ==== Event Flags Management ==== */
+
+osEventFlagsId_t osEventFlagsNew(const osEventFlagsAttr_t *attr) {
+  if ((attr == NULL) ||
+      (attr->cb_mem == NULL) ||
+      (attr->cb_size < sizeof(os_ucos2_event_flags_t))) {
+    return NULL;
+  }
+
+  os_ucos2_event_flags_t *ef = (os_ucos2_event_flags_t *)attr->cb_mem;
+  memset(ef, 0, sizeof(*ef));
+  osUcos2ObjectInit(&ef->object, osUcos2ObjectEventFlags, attr->name, attr->attr_bits);
+
+  INT8U err;
+  ef->grp = OSFlagCreate(0u, &err);
+  if (err != OS_ERR_NONE) {
+    ef->grp = NULL;
+    return NULL;
+  }
+
+  return (osEventFlagsId_t)ef;
+}
+
+const char *osEventFlagsGetName(osEventFlagsId_t ef_id) {
+  os_ucos2_event_flags_t *ef = osUcos2EventFlagsFromId(ef_id);
+  return (ef != NULL) ? ef->object.name : NULL;
+}
+
+uint32_t osEventFlagsSet(osEventFlagsId_t ef_id, uint32_t flags) {
+  os_ucos2_event_flags_t *ef = osUcos2EventFlagsFromId(ef_id);
+  if ((ef == NULL) || !osUcos2FlagsValid(flags)) {
+    return osFlagsErrorParameter;
+  }
+
+  INT8U err;
+  OS_FLAGS result = OSFlagPost(ef->grp, (OS_FLAGS)flags, OS_FLAG_SET, &err);
+  return (err == OS_ERR_NONE) ? (uint32_t)result : osUcos2EventFlagsError(err);
+}
+
+uint32_t osEventFlagsClear(osEventFlagsId_t ef_id, uint32_t flags) {
+  os_ucos2_event_flags_t *ef = osUcos2EventFlagsFromId(ef_id);
+  if ((ef == NULL) || !osUcos2FlagsValid(flags)) {
+    return osFlagsErrorParameter;
+  }
+
+  INT8U err;
+  OS_FLAGS result = OSFlagPost(ef->grp, (OS_FLAGS)flags, OS_FLAG_CLR, &err);
+  return (err == OS_ERR_NONE) ? (uint32_t)result : osUcos2EventFlagsError(err);
+}
+
+uint32_t osEventFlagsGet(osEventFlagsId_t ef_id) {
+  os_ucos2_event_flags_t *ef = osUcos2EventFlagsFromId(ef_id);
+  if (ef == NULL) {
+    return osFlagsErrorParameter;
+  }
+
+  INT8U err;
+  OS_FLAGS flags = OSFlagQuery(ef->grp, &err);
+  return (err == OS_ERR_NONE) ? (uint32_t)flags : osUcos2EventFlagsError(err);
+}
+
+uint32_t osEventFlagsWait(osEventFlagsId_t ef_id,
+                          uint32_t flags,
+                          uint32_t options,
+                          uint32_t timeout) {
+  os_ucos2_event_flags_t *ef = osUcos2EventFlagsFromId(ef_id);
+  if ((ef == NULL) || !osUcos2FlagsValid(flags) || !osUcos2FlagsOptionsValid(options)) {
+    return osFlagsErrorParameter;
+  }
+
+  INT8U wait_type = osUcos2FlagsWaitType(options);
+  INT8U err;
+  OS_FLAGS result;
+
+  if (timeout == 0u) {
+    result = OSFlagAccept(ef->grp, (OS_FLAGS)flags, wait_type, &err);
+    return (err == OS_ERR_NONE) ? (uint32_t)result : osUcos2EventFlagsError(err);
+  }
+
+  INT32U pend_timeout = (timeout == osWaitForever) ? 0u : timeout;
+  result = OSFlagPend(ef->grp, (OS_FLAGS)flags, wait_type, pend_timeout, &err);
+  return (err == OS_ERR_NONE) ? (uint32_t)result : osUcos2EventFlagsError(err);
+}
+
+osStatus_t osEventFlagsDelete(osEventFlagsId_t ef_id) {
+  os_ucos2_event_flags_t *ef = osUcos2EventFlagsFromId(ef_id);
+  if (ef == NULL) {
+    return osErrorParameter;
+  }
+
+  INT8U err;
+  (void)OSFlagDel(ef->grp, OS_DEL_ALWAYS, &err);
+  if (err == OS_ERR_NONE) {
+    ef->grp = NULL;
+    return osOK;
+  }
+
+  if ((err == OS_ERR_FLAG_INVALID_PGRP) || (err == OS_ERR_EVENT_TYPE)) {
+    return osErrorParameter;
+  }
+
+  return osErrorResource;
 }
 
 /* ==== Message Queue Management ==== */
