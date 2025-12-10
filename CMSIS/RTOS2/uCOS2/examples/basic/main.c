@@ -4,7 +4,14 @@
 /* 线程控制块与栈 */
 static uint8_t producer_cb[sizeof(os_ucos2_thread_t)];
 static uint8_t consumer_cb[sizeof(os_ucos2_thread_t)];
+#if defined(__GNUC__)
+__attribute__((aligned(8)))
+#endif
 static uint8_t producer_stack[512];
+
+#if defined(__GNUC__)
+__attribute__((aligned(8)))
+#endif
 static uint8_t consumer_stack[512];
 
 /* 互斥量、信号量、消息队列、事件旗标、定时器控制块 */
