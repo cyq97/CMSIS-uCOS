@@ -1,20 +1,20 @@
 | CMSIS-RTOS2 特性 | 支持状态 | 说明 |
 | --- | --- | --- |
-| 内核初始化/启动/时钟 | ✅ | 直接映射到 `OSInit/OSStart/OSTimeGet` 等 API |
-| 线程创建/调度/优先级 | ✅ | 需提供静态控制块与栈；优先级压缩映射至 uC/OS-II 56 个逻辑级别 |
-| 线程挂起/恢复/锁 | ✅ | `osThreadYield/Delay/DelayUntil/Suspend/Resume` 均映射到 `OSTask*` |
-| 线程 Flags API | ❌ | uC/OS-II 无线程级旗标功能，无法直接兼容 |
-| 事件 Flags 对象 | ✅ | 基于 `OSFlag*` 实现 `osEventFlagsNew/Set/Clear/Wait/Delete`（线程旗标仍不支持） |
+| 内核初始化/启动/时钟 | ✅ | `osKernel*` 映射到 `OSInit/OSStart/OSTimeGet`、`OSSched{Lock,Unlock}` 等接口 |
+| 线程创建/调度/优先级 | ✅ | 线程使用静态 `OS_TCB` + 栈；CMSIS 优先级压缩映射到 uC/OS-III 的 `OS_CFG_PRIO_MAX` 范围 |
+| 线程挂起/恢复/锁 | ✅ | `osThreadYield/Delay/DelayUntil/Suspend/Resume` 基于 `OSTimeDly/OSTask*`；`osKernelLock/Unlock` 使用 `OSSched{Lock,Unlock}` |
+| 线程 Flags API | ❌ | uC/OS-III 无线程级旗标机制，`osThreadFlags*` 返回 `osFlagsErrorUnsupported` |
+| 事件 Flags 对象 | ✅ | 包装 `OSFlagCreate/Pend/Post/Del`，支持 WaitAll/WaitAny + 可选 NoClear |
 | Mutex | ✅ | 基于 `OSMutex*`，仅支持非递归互斥；`osMutexRecursive` attr 将返回 `NULL` |
-| Semaphore | ✅ | 基于 `OSSem*`，支持计数信号量，全部静态创建 |
-| 定时器 | ✅ | 使用 uC/OS-II 软件定时器；`osTimerStart` 每次会重新创建内核定时器以便调整周期 |
-| 内存池 | ❌ | uC/OS-II 的内存分区与 CMSIS 语义差异较大，当前未适配 |
-| 消息队列 | ✅* | 使用 uC/OS-II 队列（指针消息）；仅支持 `msg_size == sizeof(void*)`，超出返回 `NULL` |
-| Kernel Protection / Zone / Watchdog | ❌ | 对应 CMSIS 高级安全接口在 uC/OS-II 中无等价功能 |
-| 线程本地存储 / 扩展 | ❌ | uC/OS-II 缺少 CMSIS 所需 TLS 机制，暂未封装 |
+| Semaphore | ✅ | 使用 `OSSem*` 实现计数信号量，支持阻塞/非阻塞模式 |
+| 定时器 | ✅ | 封装 `OSTmr*`，`osTimerStart` 通过 `OSTmrSet` 更新周期并启动 |
+| 内存池 | ❌ | CMSIS `osMemoryPool*` 与 uC/OS-III `OSMem*` 语义差异较大，暂未封装 |
+| 消息队列 | ✅* | 使用 `OS_Q` + 内部 `OS_SEM` 限制容量，仅支持指针消息 (`msg_size == sizeof(void*)`) |
+| Kernel Protection / Zone / Watchdog | ❌ | uC/OS-III 无对应安全/监控 API |
+| 线程本地存储 / 扩展 | ❌ | 内核未提供 CMSIS 期望的 TLS 能力 |
 
 其他限制：
 
-- 所有 CMSIS 对象（线程、互斥量、信号量、定时器、消息队列）都必须在 `osXxxAttr_t` 中提供静态控制块及必要缓冲；兼容层不会动态申请内存。
-- 消息队列只传递指针（`msg_size` 必须等于平台指针宽度）；`timeout == 0` 时所有同步原语（ mutex / semaphore / message queue ）都会立即返回以符合 CMSIS 语义。
-- 定时器 `ticks` 参数需大于 0；若重复调用 `osTimerStart`，内部会先停止/删除旧定时器再按新周期重建。
+- 所有 CMSIS 对象（线程、互斥量、信号量、事件旗标、定时器、消息队列）都必须在 `osXxxAttr_t` 中提供静态控制块；封装层不会动态申请内存。
+- 消息队列仅传递指针；`timeout == 0` 时，所有同步原语遵循 CMSIS 立即返回语义，对应 `OS_OPT_PEND_NON_BLOCKING`。
+- 定时器 `ticks` 参数需大于 0；重复调用 `osTimerStart` 会自动更新 `OSTmr` 的延时/周期配置。

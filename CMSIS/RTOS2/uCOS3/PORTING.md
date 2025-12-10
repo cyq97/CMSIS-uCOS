@@ -1,68 +1,59 @@
-# uC/OS-II CMSIS-RTOS2 兼容层移植指南
+# uC/OS-III CMSIS-RTOS2 兼容层移植指南
 
-本兼容层的目标是让使用 `cmsis_os2.h` 的应用可以在 uC/OS-II 上运行。由于 uC/OS-II 本身是静态内核，实现遵循“只套壳、不新增内核特性”的原则：所有 CMSIS 对象都需要用户在属性 (attr) 中提供控制块和必要的缓冲区，兼容层不会动态分配内存；uC/OS-II 缺少的功能 (如线程 Flags、Zone/Safety 等) 直接报告 `osErrorUnsupported`。
+本兼容层用于让基于 `cmsis_os2.h` 的应用运行在 uC/OS-III 上。由于 uC/OS-III 使用静态控制块和编译期裁剪机制，封装层遵循“只套壳、不新增内核特性”的原则：所有 CMSIS 对象都需要用户在属性 (`attr`) 中提供控制块和必要的缓冲区；内核缺失的能力（例如线程旗标、TrustZone）直接返回 `osErrorUnsupported`。
 
 ## 1. 依赖与配置
 
 1. **包含头文件**：
-   - 将 `CMSIS/RTOS2/Include` 添加到 include path；
-   - 由于需要知道控制块大小，应用应同时包含 `CMSIS/RTOS2/uCOS2/Include/ucos2_os2.h` 以获得 `os_ucos2_*` 类型定义。
-2. **使能 uC/OS-II 选项**：在 `os_cfg.h` 中须启用以下宏（模板文件 `libs/uC-OS2/Cfg/Template/os_cfg.h` 已全部置 1，可参考）：
-   - 线程管理：`OS_TASK_CREATE_EN`、`OS_TASK_CREATE_EXT_EN`、`OS_TASK_NAME_EN`、`OS_TASK_DEL_EN`、`OS_TASK_SUSPEND_EN`、`OS_TASK_RESUME_EN`、`OS_TASK_CHANGE_PRIO_EN`。
-   - 锁/延迟：`OS_SCHED_LOCK_EN`、`OS_TIME_DLY_RESUME_EN`。
-   - 互斥量：`OS_MUTEX_EN`、`OS_MUTEX_ACCEPT_EN`、`OS_MUTEX_DEL_EN`。
-   - 信号量：`OS_SEM_EN`、`OS_SEM_ACCEPT_EN`、`OS_SEM_QUERY_EN`、`OS_SEM_SET_EN`。
-   - 队列：`OS_Q_EN`、`OS_Q_ACCEPT_EN`、`OS_Q_QUERY_EN`、`OS_Q_FLUSH_EN`、`OS_Q_DEL_EN`。
-   - 事件旗标：`OS_FLAG_EN`、`OS_FLAG_ACCEPT_EN`、`OS_FLAG_QUERY_EN`。
-   - 软件定时器：`OS_TMR_EN` 及相关参数。
-   - 配置 `OS_LOWEST_PRIO` ≥  (50 + guard)，满足 `UCOS2_PRIORITY_LOWEST_AVAILABLE` 宏的断言。
+   - 将 `CMSIS/RTOS2/Include` 与 `CMSIS/RTOS2/uCOS3/Include` 加入编译器 include path；
+   - 应用可包含 `ucos3_os2.h` 来获知控制块大小（`os_ucos3_*` 类型）。
+2. **uC/OS-III 配置 (`os_cfg.h`)**：需要使能以下选项（`DEF_ENABLED`）：
+   - 任务管理：`OS_CFG_TASK_DEL_EN`、`OS_CFG_TASK_SUSPEND_EN`、`OS_CFG_SCHED_LOCK_TIME_MEAS_EN`（可选，仅用于 `osKernelLock`）。
+   - 同步原语：`OS_CFG_MUTEX_EN`、`OS_CFG_SEM_EN`、`OS_CFG_Q_EN`、`OS_CFG_FLAG_EN`。
+   - 软件定时器：`OS_CFG_TMR_EN`，并确保计时任务已在 BSP 中启动。
+   - 优先级：`OS_CFG_PRIO_MAX` 需 ≥ `UCOS3_PRIORITY_LEVELS + UCOS3_PRIORITY_GUARD + 1`（宏在 `ucos3_os2.h` 中检查）。
+3. **其他建议**：保持 `OSTmrTask*`、`OSStatTask*` 等任务使用保留优先级，不要和 CMSIS 线程映射区冲突。
 
-若编译阶段报 `#error "Enable ..."`，请对照上述列表检查项目配置。
+若编译阶段触发 `#error "Enable ..."`，请对照上述列表检查配置。
 
 ## 2. 静态对象分配示例
 
-CMSIS attr 均需要提供 `cb_mem` 和其它缓冲：
-
-| 对象 | attr 字段 | 说明 |
+| CMSIS 对象 | attr 字段 | 说明 |
 | --- | --- | --- |
-| 线程 (`osThreadAttr_t`) | `cb_mem = os_ucos2_thread_t[]`<br>`stack_mem = uint8_t[]` | 栈大小建议 ≥ 256 bytes；控制块大小使用 `sizeof(os_ucos2_thread_t)` |
-| 互斥量 (`osMutexAttr_t`) | `cb_mem = os_ucos2_mutex_t[]` | 仅支持非递归互斥；设置 `attr_bits` 包含 `osMutexPrioInherit` 不会生效 |
-| 信号量 (`osSemaphoreAttr_t`) | `cb_mem = os_ucos2_semaphore_t[]` | `max_count` ≥ `initial_count` |
-| 定时器 (`osTimerAttr_t`) | `cb_mem = os_ucos2_timer_t[]` | 每次 `osTimerStart` 会创建一个 uC/OS-II 软件定时器实例 |
-| 事件旗标 (`osEventFlagsAttr_t`) | `cb_mem = os_ucos2_event_flags_t[]` | 仅支持等待“置位”动作 (WaitAll/WaitAny + NoClear) |
-| 消息队列 (`osMessageQueueAttr_t`) | `cb_mem = os_ucos2_message_queue_t[]`<br>`mq_mem = void * storage[]` | 只允许指针消息 (即 `msg_size == sizeof(void*)`) |
+| 线程 (`osThreadAttr_t`) | `cb_mem = os_ucos3_thread_t[]`<br>`stack_mem = CPU_STK[]` | 栈大小建议 ≥ 256 bytes；Joinable 线程会自动创建内部 `OS_SEM` |
+| 互斥量 (`osMutexAttr_t`) | `cb_mem = os_ucos3_mutex_t[]` | 仅支持非递归互斥；`osMutexPrioInherit` 由 uC/OS-III 原生实现 |
+| 信号量 (`osSemaphoreAttr_t`) | `cb_mem = os_ucos3_semaphore_t[]` | `max_count` ≥ `initial_count` |
+| 事件旗标 (`osEventFlagsAttr_t`) | `cb_mem = os_ucos3_event_flags_t[]` | 等待语义为 WaitAll/WaitAny，支持可选 NoClear |
+| 定时器 (`osTimerAttr_t`) | `cb_mem = os_ucos3_timer_t[]` | `ticks > 0`；`osTimerStart` 会调用 `OSTmrSet` 更新周期 |
+| 消息队列 (`osMessageQueueAttr_t`) | `cb_mem = os_ucos3_message_queue_t[]` | 只接受指针消息 (`msg_size == sizeof(void*)`)，内部自带 `OS_SEM` 控制容量，`mq_mem` 可设为 `NULL` |
 
 ## 3. 使用约束
 
-- **0 超时语义**：Mutex、Semaphore、Message Queue、Event Flags 均支持 `timeout == 0` 的立即返回（内部使用 `Accept` 系列 API）。
+- **零超时语义**：Mutex/Semaphore/Message Queue/Event Flags 均通过 `OS_OPT_PEND_NON_BLOCKING` 支持 `timeout == 0` 的立即返回。
 - **消息队列**：
-  - `msg_size` 必须等于指针宽度；`osMessageQueuePut/Get` 实际上传递的是 `void*`。
-  - 用于 `mq_mem` 的缓冲需要能容纳 `msg_count` 个指针，即 `msg_count * sizeof(void*)` bytes。
-- **定时器**：`ticks` 参数必须 > 0；重复 `osTimerStart` 会先删除旧实例再启动新实例。
-- **线程 Flags API**：uC/OS-II 无对应概念，所有 `osThreadFlags*` 函数都会返回 `osFlagsErrorUnsupported`（已在 `SUPPORT.md` 说明）。
-- **内存池 (`osMemoryPool*`)**：因与 uC/OS-II 的内存管理差异较大，暂未提供封装。
+  - 仅传递指针；`msg_size` 必须等于指针宽度；
+  - 由于 uC/OS-III 的 `OS_Q` 不支持阻塞式 Post，封装层借助内部 `OS_SEM` 在 Put 路径上实现阻塞/无阻塞语义。
+- **Joinable 线程**：`attr_bits` 含 `osThreadJoinable` 时会创建内部 `OS_SEM`；线程退出后需要调用 `osThreadJoin` 以释放控制块上的同步资源。
+- **线程 Flags / 内存池**：尚未封装，相关 API 返回 `osFlagsErrorUnsupported` 或 `NULL`。
+- **Tick 频率**：`osKernelGetTickFreq()`/`osKernelGetSysTimerFreq()` 返回 `OS_CFG_TICK_RATE_HZ`，若 BSP 修改系统节拍需同步更新配置。
 
 ## 4. 初始化流程
 
-1. 正常调用 `OSInit()` 之前不要创建 uC/OS-II 对象；使用 CMSIS API 时依次调用：
+1. BSP 完成 CPU、滴答定时器等底层初始化；
+2. 调用者按 CMSIS 流程依次执行：
    ```c
    osKernelInitialize();
-   // 创建线程/同步原语/定时器/消息队列
+   // 创建线程/互斥量/信号量/事件旗标/定时器/消息队列
    osKernelStart();
    ```
-2. CMSIS 示例(位于 `CMSIS/RTOS2/uCOS2/examples/basic/main.c`) 展示了基本用法：
-   - 两个线程互相通过消息队列和信号量同步；
-   - 互斥量保护共享计数；
-   - 软件定时器周期性触发事件旗标；
-   - 所有对象均使用静态属性配置。
+3. `osKernelStart()` 内部直接调用 `OSStart()`，一旦调度器运行便不会返回。
 
-## 5. 构建 & 集成
+## 5. 构建与集成
 
-- 将 `CMSIS/RTOS2/Include` 与 `CMSIS/RTOS2/uCOS2/Include` 加入编译器搜索路径。
-- 将 `CMSIS/RTOS2/uCOS2/Source/cmsis_os2_ucos2.c` 加入工程编译单元。
-- 链接 uC/OS-II 源码及其端口文件（`Source/*.c` + 对应 `Ports/<arch>/*`）。
-- 确保硬件定时器等 BSP 初始化完成后再调用 `osKernelStart()`。
+- 编译：将 `CMSIS/RTOS2/Include` 与 `CMSIS/RTOS2/uCOS3/Include` 加入 include path；把 `CMSIS/RTOS2/uCOS3/Source/cmsis_os2_ucos3.c` 加入工程编译单元。
+- 链接：确保 uC/OS-III 核心源码、端口文件、BSP 支持文件均在同一映像中；`OSCfg_TmrTaskStkBase` 等符号需在应用中定义。
+- 示例：`CMSIS/RTOS2/uCOS3/examples/basic/main.c` 展示了典型的静态对象创建方法，可作为移植起点。
 
 ## 6. 支持矩阵
 
-完整功能支持表请查看 `CMSIS/RTOS2/uCOS2/SUPPORT.md`。若需扩展其它 CMSIS API，请确保 uC/OS-II 内核具备对应能力，再按同样方式包上一层。
+参见 `CMSIS/RTOS2/uCOS3/SUPPORT.md` 了解每类 CMSIS-RTOS2 功能的实现状态及限制。

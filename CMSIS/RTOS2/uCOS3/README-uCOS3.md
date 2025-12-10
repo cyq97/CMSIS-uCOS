@@ -1,41 +1,40 @@
-# uC/OS-II CMSIS-RTOS2 兼容层概览
+# uC/OS-III CMSIS-RTOS2 兼容层概览
 
-本目录中的 `cmsis_os2_ucos2.c` 为 CMSIS-RTOS2 API 在 uC/OS-II 上的适配层，遵循“只封装内核已有能力、不新增特性”的原则：
+`CMSIS/RTOS2/uCOS3/Source/cmsis_os2_ucos3.c` 提供了在 uC/OS-III 内核上运行 CMSIS-RTOS2 API 的静态封装。实现遵循“只复用已有内核特性、不新增动态机制”的原则，所有对象都依赖调用者在 `attr` 中提供控制块和必要的缓冲区。
 
 ## 已实现的 CMSIS API
 
-- **Kernel**：`osKernelInitialize/GetInfo/GetState/Start/Lock/Unlock/RestoreLock/GetTick*`。
-- **Thread**：`osThreadNew/GetId/GetName/GetState/SetPriority/GetPriority/Yield/Delay/DelayUntil/Suspend/Resume/Detach/Join/Terminate/Exit`。
-- **Mutex**：基于 `OSMutex*`，仅支持非递归互斥；`timeout == 0` 使用 `OSMutexAccept` 实现非阻塞。
-- **Semaphore**：基于 `OSSem*`，支持计数信号量及立即返回模式 (`OSSemAccept`)。
-- **Timer**：包装 uC/OS-II 软件定时器；`osTimerStart` 传入 ticks，内部创建/重建 `OSTmrCreate` 实例。
-- **Event Flags**：封装 `OSFlagCreate/Accept/Pend/Post`；仅支持等待置位 (WaitAll/Any + NoClear)。线程 Flags API 仍返回 `osFlagsErrorUnsupported`。
-- **Message Queue**：基于 uC/OS-II 队列 + 空闲信号量，只允许指针消息 (`msg_size == sizeof(void*)`)；`timeout == 0` 使用 `OSSemAccept/OSQAccept` 实现非阻塞。
+- **内核**：`osKernelInitialize/GetInfo/GetState/Start/Lock/Unlock/RestoreLock/GetTick*` 对应 `OSInit/OSStart/OSSched{Lock,Unlock}` 等接口。
+- **线程**：`osThreadNew/GetId/GetName/GetState/SetPriority/GetPriority/Yield/Delay/DelayUntil/Suspend/Resume/Detach/Join/Terminate/Exit` 通过 `OSTaskCreate/Del/Suspend/Resume/ChangePrio` 完成，支持 Joinable 语义（基于内部 `OS_SEM`）。
+- **互斥量**：包装 `OSMutex*`，仅支持非递归互斥；`timeout == 0` 通过 `OS_OPT_PEND_NON_BLOCKING` 实现立即返回。
+- **信号量**：基于 `OSSem*`，支持计数信号量、无限等待及零等待模式。
+- **定时器**：封装 `OSTmr*`，每次 `osTimerStart` 通过 `OSTmrSet` 更新周期，支持一次性与周期性模式。
+- **事件旗标**：映射到 `OSFlagCreate/Pend/Post/Del`，提供 WaitAll/WaitAny 与可选的 NoClear 语义；线程 Flags API 仍返回 `osFlagsErrorUnsupported`。
+- **消息队列**：使用 `OS_Q` + 辅助 `OS_SEM` 限制容量，只允许指针消息 (`msg_size == sizeof(void*)`)，支持阻塞/非阻塞 Put/Get。
 
-## 未实现或限制的功能
+## 未实现或限制
 
-- **线程 Flags** (`osThreadFlags*`)：uC/OS-II 无对应机制，直接返回 `osFlagsErrorUnsupported`。
-- **内存池** (`osMemoryPool*`)：暂未封装。
-- **高级安全/Zone/Watchdog**：CMSIS-RTOS2 中与 TrustZone、Watchdog 相关的 API 在 uC/OS-II 中无等价实现。
+- **线程 Flags (`osThreadFlags*`)**：uC/OS-III 不提供线程私有旗标，接口固定返回 `osFlagsErrorUnsupported`。
+- **内存池 (`osMemoryPool*`)**：暂未封装，推荐改用 uC/OS-III 的 `OSMem*` 或其它自定义分配器。
+- **TrustZone/Safety/Watchdog 等高级特性**：内核无对应功能。
+- **对象动态分配**：兼容层不会调用 `malloc`，所有 CMSIS 对象都需要调用者提供静态控制块及（若需要）缓冲区。
 
-完整支持矩阵及限制详见 `CMSIS/RTOS2/uCOS2/SUPPORT.md`。
+完整支持矩阵及限制详见 `CMSIS/RTOS2/uCOS3/SUPPORT.md`。
 
 ## 静态对象要求
 
-所有 CMSIS 对象都需要通过 attr 传入静态控制块：
-
-| 类型 | 控制块类型 | 说明 |
+| CMSIS 类型 | 控制块/缓冲区 | 说明 |
 | --- | --- | --- |
-| 线程 | `os_ucos2_thread_t` + 栈缓冲 | 栈大小建议 ≥ 256 bytes |
-| 互斥量 | `os_ucos2_mutex_t` | 不支持 `osMutexRecursive` |
-| 信号量 | `os_ucos2_semaphore_t` | `max_count` ≥ `initial_count` |
-| 事件旗标 | `os_ucos2_event_flags_t` | 等待置位语义 |
-| 定时器 | `os_ucos2_timer_t` | `ticks` > 0；周期/一次性均可 |
-| 消息队列 | `os_ucos2_message_queue_t` + 指针数组 | `msg_size == sizeof(void*)` |
+| 线程 | `os_ucos3_thread_t` + 栈缓冲 (`CPU_STK[]`) | 栈大小 ≥ 256 bytes 建议；Joinable 线程会额外创建内部 `OS_SEM` |
+| 互斥量 | `os_ucos3_mutex_t` | 仅支持非递归互斥，优先级继承由内核负责 |
+| 信号量 | `os_ucos3_semaphore_t` | `max_count` ≥ `initial_count` |
+| 事件旗标 | `os_ucos3_event_flags_t` | 仅实现 WaitAll/WaitAny + 可选 NoClear |
+| 定时器 | `os_ucos3_timer_t` | `ticks > 0`；周期/一次性均可 |
+| 消息队列 | `os_ucos3_message_queue_t` (+ 内部 `OS_SEM`) | 只接受指针消息，容量由 `msg_count` 指定 |
 
-## 示例与移植指南
+## 示例与移植资料
 
-- `examples/basic/main.c`：演示如何静态创建线程、互斥量、信号量、事件旗标、定时器及指针消息队列，构建生产者-消费者模型。
-- `PORTING.md`：列出所需配置宏、静态 attr 写法、集成步骤与注意事项。
+- `examples/basic/main.c` 展示了如何在 uC/OS-III 中静态创建线程、互斥量、信号量、事件旗标、定时器与消息队列，构建简单的生产者/消费者场景。
+- `PORTING.md` 详述所需的 `OS_CFG_*` 配置、attr 写法、集成步骤与注意事项。
 
-后续若需扩展其它 CMSIS API，可在确认 uC/OS-II 支持后，参照当前模式进行封装。
+若需扩展其它 CMSIS API，请先确认 uC/OS-III 内核具备等价能力，再按当前模式封装。

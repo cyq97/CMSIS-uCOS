@@ -153,6 +153,8 @@ typedef struct os_ucos3_memory_pool {
 typedef struct os_ucos3_message_queue {
   os_ucos3_object_t object;
   OS_Q              queue;
+  OS_SEM            space_sem;
+  bool              space_sem_created;
   uint32_t          msg_size;
   uint32_t          msg_count;
   bool              created;

@@ -1,22 +1,18 @@
 #include "cmsis_os2.h"
-#include "ucos2_os2.h"
+#include "ucos3_os2.h"
 
 /* 线程控制块与栈 */
-static uint8_t producer_cb[sizeof(os_ucos2_thread_t)];
-static uint8_t consumer_cb[sizeof(os_ucos2_thread_t)];
-#if defined(__GNUC__)
-__attribute__((aligned(8)))
-#endif
-static uint64_t producer_stack[512 / sizeof(uint64_t)];
-static uint64_t consumer_stack[512 / sizeof(uint64_t)];
+static uint8_t producer_cb[sizeof(os_ucos3_thread_t)];
+static uint8_t consumer_cb[sizeof(os_ucos3_thread_t)];
+static CPU_STK producer_stack[512 / sizeof(CPU_STK)];
+static CPU_STK consumer_stack[512 / sizeof(CPU_STK)];
 
 /* 互斥量、信号量、消息队列、事件旗标、定时器控制块 */
-static uint8_t mutex_cb[sizeof(os_ucos2_mutex_t)];
-static uint8_t sem_cb[sizeof(os_ucos2_semaphore_t)];
-static uint8_t mq_cb[sizeof(os_ucos2_message_queue_t)];
-static void   *mq_storage[4];
-static uint8_t flags_cb[sizeof(os_ucos2_event_flags_t)];
-static uint8_t timer_cb[sizeof(os_ucos2_timer_t)];
+static uint8_t mutex_cb[sizeof(os_ucos3_mutex_t)];
+static uint8_t sem_cb[sizeof(os_ucos3_semaphore_t)];
+static uint8_t mq_cb[sizeof(os_ucos3_message_queue_t)];
+static uint8_t flags_cb[sizeof(os_ucos3_event_flags_t)];
+static uint8_t timer_cb[sizeof(os_ucos3_timer_t)];
 
 /* CMSIS 对象句柄 */
 static osThreadId_t producer_id;
@@ -90,8 +86,8 @@ int main(void) {
     .name = "queue",
     .cb_mem = mq_cb,
     .cb_size = sizeof(mq_cb),
-    .mq_mem = mq_storage,
-    .mq_size = sizeof(mq_storage),
+    .mq_mem = NULL,
+    .mq_size = 0u,
   };
   mq_id = osMessageQueueNew(4, sizeof(void *), &mq_attr);
 
