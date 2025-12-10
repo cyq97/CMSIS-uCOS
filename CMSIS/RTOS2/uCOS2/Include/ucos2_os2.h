@@ -56,8 +56,11 @@ extern "C" {
 #error "Enable scheduler lock support (OS_SCHED_LOCK_EN) for osKernelLock/osKernelUnlock."
 #endif
 
-#if (OS_LOWEST_PRIO < 55u)
-#error "CMSIS-RTOS2 defines 56 logical priorities; set OS_LOWEST_PRIO >= 55."
+#define UCOS2_PRIORITY_LEVELS          56u
+#define UCOS2_PRIORITY_GUARD           3u    /* Reserve Idle, Stat, Timer slots */
+
+#if (OS_LOWEST_PRIO <= (UCOS2_PRIORITY_LEVELS + UCOS2_PRIORITY_GUARD))
+#error "Increase OS_LOWEST_PRIO to accommodate CMSIS-RTOS2 priorities."
 #endif
 
 #if !defined(OS_APP_HOOKS_EN) || (OS_APP_HOOKS_EN < 1u)
@@ -68,6 +71,13 @@ extern "C" {
  * Helper structure used to maintain intrusive lists of CMSIS objects. The wrapper
  * keeps lightweight tracking information to enable enumeration and cleanup.
  */
+#define UCOS2_PRIORITY_LOWEST_AVAILABLE   (OS_LOWEST_PRIO - UCOS2_PRIORITY_GUARD)
+#define UCOS2_PRIORITY_HIGHEST_AVAILABLE  (UCOS2_PRIORITY_LOWEST_AVAILABLE - (UCOS2_PRIORITY_LEVELS - 1u))
+
+#if (UCOS2_PRIORITY_LOWEST_AVAILABLE < (UCOS2_PRIORITY_LEVELS - 1u))
+#error "Not enough priority slots for CMSIS-RTOS2 mapping."
+#endif
+
 typedef struct os_ucos2_object {
   struct os_ucos2_object *prev;
   struct os_ucos2_object *next;
@@ -76,12 +86,28 @@ typedef struct os_ucos2_object {
 } os_ucos2_object_t;
 
 typedef enum {
+  osUcos2ObjectThread,
+  osUcos2ObjectTimer,
+  osUcos2ObjectEventFlags,
+  osUcos2ObjectMutex,
+  osUcos2ObjectSemaphore,
+  osUcos2ObjectMemoryPool,
+  osUcos2ObjectMessageQueue
+} os_ucos2_object_type_t;
+
+typedef struct os_ucos2_list {
+  os_ucos2_object_t *head;
+  os_ucos2_object_t *tail;
+} os_ucos2_list_t;
+
+typedef enum {
   osUcos2ThreadDetached = 0u,
   osUcos2ThreadJoinable = 1u
 } os_ucos2_thread_mode_t;
 
 typedef struct os_ucos2_thread {
   os_ucos2_object_t object;
+  os_ucos2_object_type_t type;
   osThreadFunc_t    entry;
   void             *argument;
   OS_TCB           *tcb;
@@ -89,6 +115,7 @@ typedef struct os_ucos2_thread {
   uint32_t          stack_size;
   INT8U             ucos_prio;
   osPriority_t      cmsis_prio;
+  osThreadState_t   state;
   OS_EVENT         *join_sem;
   OS_FLAG_GRP      *flags_grp;
   uint32_t          flags_cached;
@@ -148,9 +175,19 @@ typedef struct os_ucos2_kernel {
   uint32_t        tick_freq;
   uint32_t        sys_timer_freq;
   bool            initialized;
+  os_ucos2_list_t threads;
 } os_ucos2_kernel_t;
 
 extern os_ucos2_kernel_t os_ucos2_kernel;
+
+INT8U osUcos2PriorityEncode(osPriority_t priority);
+osPriority_t osUcos2PriorityDecode(INT8U ucos_prio);
+os_ucos2_thread_t *osUcos2ThreadFromId(osThreadId_t thread_id);
+os_ucos2_thread_t *osUcos2ThreadFromTcb(const OS_TCB *ptcb);
+void osUcos2ThreadListInsert(os_ucos2_thread_t *thread);
+void osUcos2ThreadListRemove(os_ucos2_thread_t *thread);
+void osUcos2ThreadCleanup(os_ucos2_thread_t *thread);
+void osUcos2ThreadJoinRelease(os_ucos2_thread_t *thread);
 
 #ifdef __cplusplus
 }
