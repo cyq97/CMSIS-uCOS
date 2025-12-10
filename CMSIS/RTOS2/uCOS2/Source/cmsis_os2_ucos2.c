@@ -19,6 +19,10 @@ static inline bool osUcos2SchedulerStarted(void) {
   return (OSRunning == OS_TRUE);
 }
 
+static inline bool osUcos2IsrDisallowsWait(uint32_t timeout) {
+  return osUcos2IrqContext() && (timeout != 0u);
+}
+
 static void osUcos2ObjectInit(os_ucos2_object_t *object,
                               os_ucos2_object_type_t type,
                               const char *name,
