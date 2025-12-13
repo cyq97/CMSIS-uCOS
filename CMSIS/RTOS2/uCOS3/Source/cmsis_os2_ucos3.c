@@ -1407,6 +1407,17 @@ static osStatus_t osUcos3MessageQueueError(OS_ERR err) {
   }
 }
 
+static inline void *osUcos3AlignPtr(void *ptr, size_t align) {
+  uintptr_t p = (uintptr_t)ptr;
+  uintptr_t mask = (uintptr_t)(align - 1u);
+  p = (p + mask) & ~mask;
+  return (void *)p;
+}
+
+static inline bool osUcos3MessageQueueUsesStorage(const os_ucos3_message_queue_t *mq) {
+  return (mq != NULL) && (mq->mq_mem != NULL) && (mq->msg_size != 0u) && (mq->msg_count != 0u);
+}
+
 osMessageQueueId_t osMessageQueueNew(uint32_t msg_count,
                                      uint32_t msg_size,
                                      const osMessageQueueAttr_t *attr) {
@@ -1415,7 +1426,7 @@ osMessageQueueId_t osMessageQueueNew(uint32_t msg_count,
   }
 
   if ((msg_count == 0u) ||
-      (msg_size != sizeof(void *)) ||
+      (msg_size == 0u) ||
       (attr == NULL) ||
       (attr->cb_mem == NULL) ||
       (attr->cb_size < sizeof(os_ucos3_message_queue_t))) {
@@ -1425,6 +1436,42 @@ osMessageQueueId_t osMessageQueueNew(uint32_t msg_count,
   os_ucos3_message_queue_t *mq = (os_ucos3_message_queue_t *)attr->cb_mem;
   memset(mq, 0, sizeof(*mq));
   osUcos3ObjectInit(&mq->object, osUcos3ObjectMessageQueue, attr->name, attr->attr_bits);
+
+  mq->msg_size = msg_size;
+  mq->msg_count = msg_count;
+
+  /* Two modes:
+   * 1) Legacy pointer mode: msg_size == sizeof(void*) and mq_mem not provided.
+   * 2) Storage-backed mode: caller provides mq_mem to store arbitrary-sized messages.
+   */
+  const uint32_t required_mq_size = msg_count * msg_size;
+  const bool storage_ok = (attr->mq_mem != NULL) && (attr->mq_size >= required_mq_size);
+
+  if ((msg_size != sizeof(void *)) && !storage_ok) {
+    return NULL;
+  }
+
+  if (storage_ok) {
+    mq->mq_mem = (uint8_t *)attr->mq_mem;
+    mq->mq_size = attr->mq_size;
+
+    /* Allocate free-stack storage from remaining cb_size bytes (after the control block). */
+    uint8_t *cb_base = (uint8_t *)mq;
+    void *stack_unaligned = (void *)(cb_base + sizeof(*mq));
+    void *stack_aligned = osUcos3AlignPtr(stack_unaligned, sizeof(void *));
+    size_t used = (size_t)((uint8_t *)stack_aligned - cb_base);
+    size_t remaining = (attr->cb_size > used) ? (size_t)(attr->cb_size - used) : 0u;
+    size_t capacity = remaining / sizeof(void *);
+    if (capacity < msg_count) {
+      return NULL;
+    }
+    mq->free_stack = (void **)stack_aligned;
+    mq->free_top = msg_count;
+
+    for (uint32_t i = 0u; i < msg_count; ++i) {
+      mq->free_stack[i] = (void *)(mq->mq_mem + (i * msg_size));
+    }
+  }
 
   OS_ERR err;
   OSQCreate(&mq->queue,
@@ -1446,8 +1493,6 @@ osMessageQueueId_t osMessageQueueNew(uint32_t msg_count,
 
   mq->space_sem_created = true;
   mq->created = true;
-  mq->msg_size = msg_size;
-  mq->msg_count = msg_count;
   return (osMessageQueueId_t)mq;
 }
 
@@ -1471,7 +1516,14 @@ osStatus_t osMessageQueuePut(osMessageQueueId_t mq_id,
     return osErrorParameter;
   }
 
-  void *message = *(void * const *)msg_ptr;
+  void *message = NULL;
+  if (!osUcos3MessageQueueUsesStorage(mq)) {
+    /* Legacy pointer mode: msg_ptr points to a (void*) payload. */
+    if (mq->msg_size != sizeof(void *)) {
+      return osErrorParameter;
+    }
+    message = *(void * const *)msg_ptr;
+  }
 
   OS_ERR err;
   OSSemPend(&mq->space_sem,
@@ -1486,14 +1538,39 @@ osStatus_t osMessageQueuePut(osMessageQueueId_t mq_id,
     return osUcos3MessageQueueError(err);
   }
 
+  if (osUcos3MessageQueueUsesStorage(mq)) {
+    /* Pop a free block, copy payload into it, then post block pointer to OS_Q. */
+    CPU_SR_ALLOC();
+    CPU_CRITICAL_ENTER();
+    if (mq->free_top == 0u) {
+      CPU_CRITICAL_EXIT();
+      (void)OSSemPost(&mq->space_sem, OS_OPT_POST_1, &err);
+      return osErrorResource;
+    }
+    mq->free_top--;
+    message = mq->free_stack[mq->free_top];
+    CPU_CRITICAL_EXIT();
+
+    memcpy(message, msg_ptr, mq->msg_size);
+  }
+
   OSQPost(&mq->queue,
           message,
-          (OS_MSG_SIZE)sizeof(void *),
+          (OS_MSG_SIZE)mq->msg_size,
           OS_OPT_POST_FIFO,
           &err);
   if (err != OS_ERR_NONE) {
-    OS_ERR sem_err;
-    OSSemPost(&mq->space_sem, OS_OPT_POST_1, &sem_err);
+    if (osUcos3MessageQueueUsesStorage(mq) && (message != NULL)) {
+      /* Return the block to the free stack. */
+      CPU_SR_ALLOC();
+      CPU_CRITICAL_ENTER();
+      if (mq->free_stack != NULL) {
+        mq->free_stack[mq->free_top] = message;
+        mq->free_top++;
+      }
+      CPU_CRITICAL_EXIT();
+    }
+    (void)OSSemPost(&mq->space_sem, OS_OPT_POST_1, &err);
     return osUcos3MessageQueueError(err);
   }
 
@@ -1504,7 +1581,9 @@ osStatus_t osMessageQueueGet(osMessageQueueId_t mq_id,
                              void *msg_ptr,
                              uint8_t *msg_prio,
                              uint32_t timeout) {
-  (void)msg_prio;
+  if (msg_prio != NULL) {
+    *msg_prio = 0u;
+  }
 
   os_ucos3_message_queue_t *mq = osUcos3MessageQueueFromId(mq_id);
   if ((mq == NULL) || !mq->created || (msg_ptr == NULL)) {
@@ -1530,11 +1609,27 @@ osStatus_t osMessageQueueGet(osMessageQueueId_t mq_id,
     return osUcos3MessageQueueError(err);
   }
 
-  *(void **)msg_ptr = message;
+  if (osUcos3MessageQueueUsesStorage(mq)) {
+    if ((message == NULL) || (size != (OS_MSG_SIZE)mq->msg_size)) {
+      /* Defensive: return resource error if message doesn't match expected shape. */
+      return osErrorResource;
+    }
+    memcpy(msg_ptr, message, mq->msg_size);
 
-  OS_ERR post_err;
-  OSSemPost(&mq->space_sem, OS_OPT_POST_1, &post_err);
-  (void)post_err;
+    /* Return block to free stack and release capacity token. */
+    CPU_SR_ALLOC();
+    CPU_CRITICAL_ENTER();
+    if (mq->free_stack != NULL) {
+      mq->free_stack[mq->free_top] = message;
+      mq->free_top++;
+    }
+    CPU_CRITICAL_EXIT();
+  } else {
+    /* Legacy pointer mode: msg_ptr expects (void*) payload. */
+    *(void **)msg_ptr = message;
+  }
+
+  (void)OSSemPost(&mq->space_sem, OS_OPT_POST_1, &err);
 
   return osOK;
 }
@@ -1583,6 +1678,17 @@ osStatus_t osMessageQueueReset(osMessageQueueId_t mq_id) {
   OSQFlush(&mq->queue, &err);
   if (err != OS_ERR_NONE) {
     return osUcos3MessageQueueError(err);
+  }
+
+  if (osUcos3MessageQueueUsesStorage(mq) && (mq->free_stack != NULL) && (mq->mq_mem != NULL)) {
+    /* Rebuild free list to contain all blocks. */
+    CPU_SR_ALLOC();
+    CPU_CRITICAL_ENTER();
+    for (uint32_t i = 0u; i < mq->msg_count; ++i) {
+      mq->free_stack[i] = (void *)(mq->mq_mem + (i * mq->msg_size));
+    }
+    mq->free_top = mq->msg_count;
+    CPU_CRITICAL_EXIT();
   }
 
   OSSemSet(&mq->space_sem, (OS_SEM_CTR)mq->msg_count, &err);

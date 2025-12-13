@@ -25,7 +25,7 @@
 | 信号量 (`osSemaphoreAttr_t`) | `cb_mem = os_ucos3_semaphore_t[]` | `max_count` ≥ `initial_count` |
 | 事件旗标 (`osEventFlagsAttr_t`) | `cb_mem = os_ucos3_event_flags_t[]` | 等待语义为 WaitAll/WaitAny，支持可选 NoClear |
 | 定时器 (`osTimerAttr_t`) | `cb_mem = os_ucos3_timer_t[]` | `ticks > 0`；`osTimerStart` 会调用 `OSTmrSet` 更新周期 |
-| 消息队列 (`osMessageQueueAttr_t`) | `cb_mem = os_ucos3_message_queue_t[]` | 只接受指针消息 (`msg_size == sizeof(void*)`)，内部自带 `OS_SEM` 控制容量，`mq_mem` 可设为 `NULL` |
+| 消息队列 (`osMessageQueueAttr_t`) | `cb_mem = os_ucos3_message_queue_t[]` (+ 可选 free-stack 空间)<br>`mq_mem = uint8_t[]` | 支持任意 `msg_size` 的静态消息队列：当 `msg_size != sizeof(void*)` 时必须提供 `mq_mem/mq_size >= msg_count * msg_size`；内部用 `OS_Q` 传递块指针，并通过内部 `OS_SEM` 实现 Put 的阻塞语义。若 `msg_size == sizeof(void*)` 且不提供 `mq_mem`，则保持“指针消息”兼容模式（`msg_ptr` 视为 `void*` 值）。 |
 
 ## 3. 使用约束
 

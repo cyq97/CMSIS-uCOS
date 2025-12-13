@@ -9,7 +9,7 @@
 | Semaphore | ✅ | 使用 `OSSem*` 实现计数信号量，支持阻塞/非阻塞模式 |
 | 定时器 | ✅ | 封装 `OSTmr*`，`osTimerStart` 通过 `OSTmrSet` 更新周期并启动 |
 | 内存池 | ❌ | CMSIS `osMemoryPool*` 与 uC/OS-III `OSMem*` 语义差异较大，暂未封装 |
-| 消息队列 | ✅* | 使用 `OS_Q` + 内部 `OS_SEM` 限制容量，仅支持指针消息 (`msg_size == sizeof(void*)`) |
+| 消息队列 | ✅* | 使用 `OS_Q` + 内部 `OS_SEM` 限制容量；支持任意 `msg_size`（静态 `mq_mem` 存储，Put/Get 时 memcpy），同时保留 `msg_size == sizeof(void*)` 的“指针消息”兼容模式 |
 | Kernel Protection / Zone / Watchdog | ❌ | uC/OS-III 无对应安全/监控 API |
 | 线程本地存储 / 扩展 | ❌ | 内核未提供 CMSIS 期望的 TLS 能力 |
 

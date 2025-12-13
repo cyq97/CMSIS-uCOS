@@ -155,6 +155,10 @@ typedef struct os_ucos3_message_queue {
   OS_Q              queue;
   OS_SEM            space_sem;
   bool              space_sem_created;
+  uint8_t          *mq_mem;
+  uint32_t          mq_size;
+  void            **free_stack;
+  uint32_t          free_top;
   uint32_t          msg_size;
   uint32_t          msg_count;
   bool              created;
