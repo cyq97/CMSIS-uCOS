@@ -85,8 +85,8 @@ static uint32_t osUcos3EventFlagsError(OS_ERR err) {
     case OS_ERR_PEND_WOULD_BLOCK:
     case OS_ERR_OBJ_PTR_NULL:
     case OS_ERR_OBJ_TYPE:
-    case OS_ERR_FLAG_INVALID_PEND_OPT:
-    case OS_ERR_FLAG_INVALID:
+    case OS_ERR_FLAG_PEND_OPT:
+    case OS_ERR_OPT_INVALID:
       return osFlagsErrorParameter;
     default:
       return osFlagsErrorUnknown;
@@ -658,9 +658,8 @@ osStatus_t osThreadYield(void) {
     return osError;
   }
 
-  OS_ERR err;
-  OSTaskYield(&err);
-  return (err == OS_ERR_NONE) ? osOK : osError;
+  /* uC/OS-III v3.08.02 does not provide OSTaskYield(). OSTimeDly(0) yields. */
+  return osUcos3DelayTicks(0u);
 }
 
 __NO_RETURN void osThreadExit(void) {
@@ -1098,9 +1097,8 @@ uint32_t osSemaphoreGetCount(osSemaphoreId_t semaphore_id) {
     return 0u;
   }
 
-  OS_ERR err;
-  OS_SEM_CTR cnt = OSSemCntGet(&sem->sem, &err);
-  return (err == OS_ERR_NONE) ? (uint32_t)cnt : 0u;
+  /* uC/OS-III v3.08.02 does not provide OSSemCntGet(); read current counter. */
+  return (uint32_t)sem->sem.Ctr;
 }
 
 osStatus_t osSemaphoreDelete(osSemaphoreId_t semaphore_id) {
@@ -1156,10 +1154,12 @@ osTimerId_t osTimerNew(osTimerFunc_t func,
   timer->type = type;
 
   OS_ERR err;
+  /* uC/OS-III requires a non-zero period when creating periodic timers. */
+  OS_TICK create_period = (type == osTimerPeriodic) ? (OS_TICK)1u : (OS_TICK)0u;
   OSTmrCreate(&timer->timer,
               (CPU_CHAR *)(attr->name != NULL ? attr->name : "cmsis.timer"),
               (OS_TICK)1u,
-              (OS_TICK)0u,
+              create_period,
               (type == osTimerPeriodic) ? OS_OPT_TMR_PERIODIC : OS_OPT_TMR_ONE_SHOT,
               osUcos3TimerThunk,
               timer,
@@ -1186,7 +1186,6 @@ static osStatus_t osUcos3TimerConfigure(os_ucos3_timer_t *timer, uint32_t ticks)
   OSTmrSet(&timer->timer,
            (OS_TICK)ticks,
            (timer->type == osTimerPeriodic) ? (OS_TICK)ticks : (OS_TICK)0u,
-           (timer->type == osTimerPeriodic) ? OS_OPT_TMR_PERIODIC : OS_OPT_TMR_ONE_SHOT,
            osUcos3TimerThunk,
            timer,
            &err);
@@ -1245,7 +1244,7 @@ uint32_t osTimerIsRunning(osTimerId_t timer_id) {
   }
 
   OS_ERR err;
-  OS_TMR_STATE state = OSTmrStateGet(&timer->timer, &err);
+  OS_STATE state = OSTmrStateGet(&timer->timer, &err);
   if (err != OS_ERR_NONE) {
     return 0u;
   }
@@ -1332,9 +1331,8 @@ uint32_t osEventFlagsGet(osEventFlagsId_t ef_id) {
     return osFlagsErrorParameter;
   }
 
-  OS_ERR err;
-  OS_FLAGS flags = OSFlagQuery(&ef->grp, &err);
-  return (err == OS_ERR_NONE) ? (uint32_t)flags : osUcos3EventFlagsError(err);
+  /* uC/OS-III v3.08.02 does not provide OSFlagQuery(); read current flags. */
+  return (uint32_t)ef->grp.Flags;
 }
 
 uint32_t osEventFlagsWait(osEventFlagsId_t ef_id,
@@ -1552,9 +1550,8 @@ uint32_t osMessageQueueGetCount(osMessageQueueId_t mq_id) {
     return 0u;
   }
 
-  OS_ERR err;
-  OS_MSG_QTY qty = OSQMsgQtyGet(&mq->queue, &err);
-  return (err == OS_ERR_NONE) ? (uint32_t)qty : 0u;
+  /* uC/OS-III v3.08.02 does not provide OSQMsgQtyGet(); read current entries. */
+  return (uint32_t)mq->queue.MsgQ.NbrEntries;
 }
 
 uint32_t osMessageQueueGetSpace(osMessageQueueId_t mq_id) {
@@ -1563,9 +1560,8 @@ uint32_t osMessageQueueGetSpace(osMessageQueueId_t mq_id) {
     return 0u;
   }
 
-  OS_ERR err;
-  OS_SEM_CTR cnt = OSSemCntGet(&mq->space_sem, &err);
-  return (err == OS_ERR_NONE) ? (uint32_t)cnt : 0u;
+  /* uC/OS-III v3.08.02 does not provide OSSemCntGet(); read current counter. */
+  return (uint32_t)mq->space_sem.Ctr;
 }
 
 osStatus_t osMessageQueueReset(osMessageQueueId_t mq_id) {
