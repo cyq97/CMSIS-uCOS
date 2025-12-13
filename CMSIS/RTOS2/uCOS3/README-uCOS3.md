@@ -10,7 +10,7 @@
 - **信号量**：基于 `OSSem*`，支持计数信号量、无限等待及零等待模式。
 - **定时器**：封装 `OSTmr*`，每次 `osTimerStart` 通过 `OSTmrSet` 更新周期，支持一次性与周期性模式。
 - **事件旗标**：映射到 `OSFlagCreate/Pend/Post/Del`，提供 WaitAll/WaitAny 与可选的 NoClear 语义；线程 Flags API 目前返回 `osFlagsErrorUnknown`。
-- **消息队列**：使用 `OS_Q` + 辅助 `OS_SEM` 限制容量；支持任意 `msg_size` 的静态消息队列（需要 `mq_mem` 存储区，Put/Get 时 memcpy），同时保留 `msg_size == sizeof(void*)` 的“指针消息”兼容模式。
+- **消息队列**：使用 `OS_Q` + 辅助 `OS_SEM` 限制容量；支持任意 `msg_size` 的静态消息队列（必须提供 `mq_mem` 存储区，Put/Get 时 memcpy）。
 
 ## 未实现或限制
 
@@ -34,7 +34,7 @@
 | 信号量 | `os_ucos3_semaphore_t` | `max_count` ≥ `initial_count` |
 | 事件旗标 | `os_ucos3_event_flags_t` | 仅实现 WaitAll/WaitAny + 可选 NoClear |
 | 定时器 | `os_ucos3_timer_t` | `ticks > 0`；周期/一次性均可 |
-| 消息队列 | `os_ucos3_message_queue_t` (+ 内部 `OS_SEM`) | 任意 `msg_size` 需提供 `mq_mem/mq_size >= msg_count * msg_size`；不提供 `mq_mem` 时仅兼容 `msg_size == sizeof(void*)` 的指针消息 |
+| 消息队列 | `os_ucos3_message_queue_t` (+ 内部 `OS_SEM`) | 必须提供 `mq_mem/mq_size >= msg_count * msg_size` |
 
 ## 中断上下文支持
 
