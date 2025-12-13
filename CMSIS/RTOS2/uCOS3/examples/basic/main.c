@@ -10,9 +10,13 @@ static CPU_STK consumer_stack[512 / sizeof(CPU_STK)];
 /* 互斥量、信号量、消息队列、事件旗标、定时器控制块 */
 static uint8_t mutex_cb[sizeof(os_ucos3_mutex_t)];
 static uint8_t sem_cb[sizeof(os_ucos3_semaphore_t)];
-static uint8_t mq_cb[sizeof(os_ucos3_message_queue_t)];
+/* message queue control block must also provide space for internal free-stack */
+static uint8_t mq_cb[sizeof(os_ucos3_message_queue_t) + (4u * sizeof(void *)) + sizeof(void *)];
 static uint8_t flags_cb[sizeof(os_ucos3_event_flags_t)];
 static uint8_t timer_cb[sizeof(os_ucos3_timer_t)];
+
+/* message queue storage (required for all msg_size values) */
+static uint8_t mq_mem[4u * sizeof(void *)];
 
 /* CMSIS 对象句柄 */
 static osThreadId_t producer_id;
@@ -81,13 +85,13 @@ int main(void) {
   };
   sem_id = osSemaphoreNew(4, 0, &sem_attr);
 
-  /* 消息队列 (指针消息) */
+  /* 消息队列 (静态消息存储) */
   const osMessageQueueAttr_t mq_attr = {
     .name = "queue",
     .cb_mem = mq_cb,
     .cb_size = sizeof(mq_cb),
-    .mq_mem = NULL,
-    .mq_size = 0u,
+    .mq_mem = mq_mem,
+    .mq_size = sizeof(mq_mem),
   };
   mq_id = osMessageQueueNew(4, sizeof(void *), &mq_attr);
 

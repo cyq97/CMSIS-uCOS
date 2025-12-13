@@ -5,21 +5,25 @@
 ## 已实现的 CMSIS API
 
 - **内核**：`osKernelInitialize/GetInfo/GetState/Start/Lock/Unlock/RestoreLock/GetTick*` 对应 `OSInit/OSStart/OSSched{Lock,Unlock}` 等接口。
-- **线程**：`osThreadNew/GetId/GetName/GetState/SetPriority/GetPriority/Yield/Delay/DelayUntil/Suspend/Resume/Detach/Join/Terminate/Exit` 通过 `OSTaskCreate/Del/Suspend/Resume/ChangePrio` 完成，支持 Joinable 语义（基于内部 `OS_SEM`）。
+- **线程**：`osThreadNew/GetId/GetName/GetState/SetPriority/GetPriority/Yield/Delay/DelayUntil/Suspend/Resume/Detach/Join/Terminate/Exit` 基于 `OSTaskCreate/Del/Suspend/Resume/ChangePrio` 等接口；其中 `osThreadYield` 通过 `OSTimeDly(0)` 实现让出；支持 Joinable 语义（基于内部 `OS_SEM`）。
 - **互斥量**：包装 `OSMutex*`，仅支持非递归互斥；`timeout == 0` 通过 `OS_OPT_PEND_NON_BLOCKING` 实现立即返回。
 - **信号量**：基于 `OSSem*`，支持计数信号量、无限等待及零等待模式。
 - **定时器**：封装 `OSTmr*`，每次 `osTimerStart` 通过 `OSTmrSet` 更新周期，支持一次性与周期性模式。
-- **事件旗标**：映射到 `OSFlagCreate/Pend/Post/Del`，提供 WaitAll/WaitAny 与可选的 NoClear 语义；线程 Flags API 仍返回 `osFlagsErrorUnsupported`。
-- **消息队列**：使用 `OS_Q` + 辅助 `OS_SEM` 限制容量，只允许指针消息 (`msg_size == sizeof(void*)`)，支持阻塞/非阻塞 Put/Get。
+- **事件旗标**：映射到 `OSFlagCreate/Pend/Post/Del`，提供 WaitAll/WaitAny 与可选的 NoClear 语义；线程 Flags API 目前返回 `osFlagsErrorUnknown`。
+- **消息队列**：使用 `OS_Q` + 辅助 `OS_SEM` 限制容量；支持任意 `msg_size` 的静态消息队列（必须提供 `mq_mem` 存储区，Put/Get 时 memcpy）。
 
 ## 未实现或限制
 
-- **线程 Flags (`osThreadFlags*`)**：uC/OS-III 不提供线程私有旗标，接口固定返回 `osFlagsErrorUnsupported`。
+- **线程 Flags (`osThreadFlags*`)**：uC/OS-III 不提供线程私有旗标，接口固定返回 `osFlagsErrorUnknown`。
 - **内存池 (`osMemoryPool*`)**：暂未封装，推荐改用 uC/OS-III 的 `OSMem*` 或其它自定义分配器。
 - **TrustZone/Safety/Watchdog 等高级特性**：内核无对应功能。
 - **对象动态分配**：兼容层不会调用 `malloc`，所有 CMSIS 对象都需要调用者提供静态控制块及（若需要）缓冲区。
 
 完整支持矩阵及限制详见 `CMSIS/RTOS2/uCOS3/SUPPORT.md`。
+
+## 实现提示
+
+- **周期定时器**：uC/OS-III 在创建 periodic timer 时要求 `period != 0`。兼容层会用最小非零周期完成创建，并在 `osTimerStart(ticks)` 时通过 `OSTmrSet` 覆盖为应用指定的周期/延时（`ticks > 0`）。
 
 ## 静态对象要求
 
@@ -30,7 +34,7 @@
 | 信号量 | `os_ucos3_semaphore_t` | `max_count` ≥ `initial_count` |
 | 事件旗标 | `os_ucos3_event_flags_t` | 仅实现 WaitAll/WaitAny + 可选 NoClear |
 | 定时器 | `os_ucos3_timer_t` | `ticks > 0`；周期/一次性均可 |
-| 消息队列 | `os_ucos3_message_queue_t` (+ 内部 `OS_SEM`) | 只接受指针消息，容量由 `msg_count` 指定 |
+| 消息队列 | `os_ucos3_message_queue_t` (+ 内部 `OS_SEM`) | 必须提供 `mq_mem/mq_size >= msg_count * msg_size` |
 
 ## 中断上下文支持
 

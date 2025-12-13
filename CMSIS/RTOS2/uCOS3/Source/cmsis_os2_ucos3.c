@@ -26,6 +26,8 @@ static inline bool osUcos3IsrDisallowsWait(uint32_t timeout) {
   return osUcos3IrqContext() && (timeout != 0u);
 }
 
+static osStatus_t osUcos3DelayTicks(uint32_t ticks);
+
 static void osUcos3ObjectInit(os_ucos3_object_t *object,
                               os_ucos3_object_type_t type,
                               const char *name,
@@ -85,8 +87,8 @@ static uint32_t osUcos3EventFlagsError(OS_ERR err) {
     case OS_ERR_PEND_WOULD_BLOCK:
     case OS_ERR_OBJ_PTR_NULL:
     case OS_ERR_OBJ_TYPE:
-    case OS_ERR_FLAG_INVALID_PEND_OPT:
-    case OS_ERR_FLAG_INVALID:
+    case OS_ERR_FLAG_PEND_OPT:
+    case OS_ERR_OPT_INVALID:
       return osFlagsErrorParameter;
     default:
       return osFlagsErrorUnknown;
@@ -477,7 +479,8 @@ int32_t osKernelRestoreLock(int32_t lock) {
 }
 
 uint32_t osKernelGetTickCount(void) {
-  return (uint32_t)OSTimeGet();
+  OS_ERR err;
+  return (uint32_t)OSTimeGet(&err);
 }
 
 uint32_t osKernelGetTickFreq(void) {
@@ -485,7 +488,8 @@ uint32_t osKernelGetTickFreq(void) {
 }
 
 uint32_t osKernelGetSysTimerCount(void) {
-  return (uint32_t)OSTimeGet();
+  OS_ERR err;
+  return (uint32_t)OSTimeGet(&err);
 }
 
 uint32_t osKernelGetSysTimerFreq(void) {
@@ -658,9 +662,8 @@ osStatus_t osThreadYield(void) {
     return osError;
   }
 
-  OS_ERR err;
-  OSTaskYield(&err);
-  return (err == OS_ERR_NONE) ? osOK : osError;
+  /* uC/OS-III v3.08.02 does not provide OSTaskYield(). OSTimeDly(0) yields. */
+  return osUcos3DelayTicks(0u);
 }
 
 __NO_RETURN void osThreadExit(void) {
@@ -830,7 +833,8 @@ osStatus_t osDelayUntil(uint32_t ticks) {
     return osError;
   }
 
-  OS_TICK now = OSTimeGet();
+  OS_ERR err;
+  OS_TICK now = OSTimeGet(&err);
   if (ticks <= now) {
     return osErrorParameter;
   }
@@ -843,23 +847,23 @@ osStatus_t osDelayUntil(uint32_t ticks) {
 uint32_t osThreadFlagsSet(osThreadId_t thread_id, uint32_t flags) {
   (void)thread_id;
   (void)flags;
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 uint32_t osThreadFlagsClear(uint32_t flags) {
   (void)flags;
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 uint32_t osThreadFlagsGet(void) {
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 uint32_t osThreadFlagsWait(uint32_t flags, uint32_t options, uint32_t timeout) {
   (void)flags;
   (void)options;
   (void)timeout;
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 /* ==== Mutex Management ==== */
@@ -1098,9 +1102,8 @@ uint32_t osSemaphoreGetCount(osSemaphoreId_t semaphore_id) {
     return 0u;
   }
 
-  OS_ERR err;
-  OS_SEM_CTR cnt = OSSemCntGet(&sem->sem, &err);
-  return (err == OS_ERR_NONE) ? (uint32_t)cnt : 0u;
+  /* uC/OS-III v3.08.02 does not provide OSSemCntGet(); read current counter. */
+  return (uint32_t)sem->sem.Ctr;
 }
 
 osStatus_t osSemaphoreDelete(osSemaphoreId_t semaphore_id) {
@@ -1156,10 +1159,12 @@ osTimerId_t osTimerNew(osTimerFunc_t func,
   timer->type = type;
 
   OS_ERR err;
+  /* uC/OS-III requires a non-zero period when creating periodic timers. */
+  OS_TICK create_period = (type == osTimerPeriodic) ? (OS_TICK)1u : (OS_TICK)0u;
   OSTmrCreate(&timer->timer,
               (CPU_CHAR *)(attr->name != NULL ? attr->name : "cmsis.timer"),
               (OS_TICK)1u,
-              (OS_TICK)0u,
+              create_period,
               (type == osTimerPeriodic) ? OS_OPT_TMR_PERIODIC : OS_OPT_TMR_ONE_SHOT,
               osUcos3TimerThunk,
               timer,
@@ -1186,7 +1191,6 @@ static osStatus_t osUcos3TimerConfigure(os_ucos3_timer_t *timer, uint32_t ticks)
   OSTmrSet(&timer->timer,
            (OS_TICK)ticks,
            (timer->type == osTimerPeriodic) ? (OS_TICK)ticks : (OS_TICK)0u,
-           (timer->type == osTimerPeriodic) ? OS_OPT_TMR_PERIODIC : OS_OPT_TMR_ONE_SHOT,
            osUcos3TimerThunk,
            timer,
            &err);
@@ -1245,7 +1249,7 @@ uint32_t osTimerIsRunning(osTimerId_t timer_id) {
   }
 
   OS_ERR err;
-  OS_TMR_STATE state = OSTmrStateGet(&timer->timer, &err);
+  OS_STATE state = OSTmrStateGet(&timer->timer, &err);
   if (err != OS_ERR_NONE) {
     return 0u;
   }
@@ -1332,9 +1336,8 @@ uint32_t osEventFlagsGet(osEventFlagsId_t ef_id) {
     return osFlagsErrorParameter;
   }
 
-  OS_ERR err;
-  OS_FLAGS flags = OSFlagQuery(&ef->grp, &err);
-  return (err == OS_ERR_NONE) ? (uint32_t)flags : osUcos3EventFlagsError(err);
+  /* uC/OS-III v3.08.02 does not provide OSFlagQuery(); read current flags. */
+  return (uint32_t)ef->grp.Flags;
 }
 
 uint32_t osEventFlagsWait(osEventFlagsId_t ef_id,
@@ -1404,6 +1407,13 @@ static osStatus_t osUcos3MessageQueueError(OS_ERR err) {
   }
 }
 
+static inline void *osUcos3AlignPtr(void *ptr, size_t align) {
+  uintptr_t p = (uintptr_t)ptr;
+  uintptr_t mask = (uintptr_t)(align - 1u);
+  p = (p + mask) & ~mask;
+  return (void *)p;
+}
+
 osMessageQueueId_t osMessageQueueNew(uint32_t msg_count,
                                      uint32_t msg_size,
                                      const osMessageQueueAttr_t *attr) {
@@ -1412,16 +1422,48 @@ osMessageQueueId_t osMessageQueueNew(uint32_t msg_count,
   }
 
   if ((msg_count == 0u) ||
-      (msg_size != sizeof(void *)) ||
+      (msg_size == 0u) ||
       (attr == NULL) ||
       (attr->cb_mem == NULL) ||
       (attr->cb_size < sizeof(os_ucos3_message_queue_t))) {
     return NULL;
   }
 
+  /* This wrapper always requires a caller-provided storage buffer (mq_mem).
+   * Rationale: Avoids relying on uC/OS-III global message pool semantics and
+   * keeps message queues fully static/self-contained for all msg_size values.
+   */
+  const uint32_t required_mq_size = msg_count * msg_size;
+  if ((attr->mq_mem == NULL) || (attr->mq_size < required_mq_size)) {
+    return NULL;
+  }
+
   os_ucos3_message_queue_t *mq = (os_ucos3_message_queue_t *)attr->cb_mem;
   memset(mq, 0, sizeof(*mq));
   osUcos3ObjectInit(&mq->object, osUcos3ObjectMessageQueue, attr->name, attr->attr_bits);
+
+  mq->msg_size = msg_size;
+  mq->msg_count = msg_count;
+
+  mq->mq_mem = (uint8_t *)attr->mq_mem;
+  mq->mq_size = attr->mq_size;
+
+  /* Allocate free-stack storage from remaining cb_size bytes (after the control block). */
+  uint8_t *cb_base = (uint8_t *)mq;
+  void *stack_unaligned = (void *)(cb_base + sizeof(*mq));
+  void *stack_aligned = osUcos3AlignPtr(stack_unaligned, sizeof(void *));
+  size_t used = (size_t)((uint8_t *)stack_aligned - cb_base);
+  size_t remaining = (attr->cb_size > used) ? (size_t)(attr->cb_size - used) : 0u;
+  size_t capacity = remaining / sizeof(void *);
+  if (capacity < msg_count) {
+    return NULL;
+  }
+  mq->free_stack = (void **)stack_aligned;
+  mq->free_top = msg_count;
+
+  for (uint32_t i = 0u; i < msg_count; ++i) {
+    mq->free_stack[i] = (void *)(mq->mq_mem + (i * msg_size));
+  }
 
   OS_ERR err;
   OSQCreate(&mq->queue,
@@ -1443,8 +1485,6 @@ osMessageQueueId_t osMessageQueueNew(uint32_t msg_count,
 
   mq->space_sem_created = true;
   mq->created = true;
-  mq->msg_size = msg_size;
-  mq->msg_count = msg_count;
   return (osMessageQueueId_t)mq;
 }
 
@@ -1468,7 +1508,7 @@ osStatus_t osMessageQueuePut(osMessageQueueId_t mq_id,
     return osErrorParameter;
   }
 
-  void *message = *(void * const *)msg_ptr;
+  void *message = NULL;
 
   OS_ERR err;
   OSSemPend(&mq->space_sem,
@@ -1483,14 +1523,35 @@ osStatus_t osMessageQueuePut(osMessageQueueId_t mq_id,
     return osUcos3MessageQueueError(err);
   }
 
+  /* Pop a free block, copy payload into it, then post block pointer to OS_Q. */
+  CPU_SR_ALLOC();
+  CPU_CRITICAL_ENTER();
+  if (mq->free_top == 0u) {
+    CPU_CRITICAL_EXIT();
+    (void)OSSemPost(&mq->space_sem, OS_OPT_POST_1, &err);
+    return osErrorResource;
+  }
+  mq->free_top--;
+  message = mq->free_stack[mq->free_top];
+  CPU_CRITICAL_EXIT();
+
+  memcpy(message, msg_ptr, mq->msg_size);
+
   OSQPost(&mq->queue,
           message,
-          (OS_MSG_SIZE)sizeof(void *),
+          (OS_MSG_SIZE)mq->msg_size,
           OS_OPT_POST_FIFO,
           &err);
   if (err != OS_ERR_NONE) {
-    OS_ERR sem_err;
-    OSSemPost(&mq->space_sem, OS_OPT_POST_1, &sem_err);
+    /* Return the block to the free stack. */
+    CPU_SR_ALLOC();
+    CPU_CRITICAL_ENTER();
+    if (mq->free_stack != NULL) {
+      mq->free_stack[mq->free_top] = message;
+      mq->free_top++;
+    }
+    CPU_CRITICAL_EXIT();
+    (void)OSSemPost(&mq->space_sem, OS_OPT_POST_1, &err);
     return osUcos3MessageQueueError(err);
   }
 
@@ -1501,7 +1562,9 @@ osStatus_t osMessageQueueGet(osMessageQueueId_t mq_id,
                              void *msg_ptr,
                              uint8_t *msg_prio,
                              uint32_t timeout) {
-  (void)msg_prio;
+  if (msg_prio != NULL) {
+    *msg_prio = 0u;
+  }
 
   os_ucos3_message_queue_t *mq = osUcos3MessageQueueFromId(mq_id);
   if ((mq == NULL) || !mq->created || (msg_ptr == NULL)) {
@@ -1527,11 +1590,22 @@ osStatus_t osMessageQueueGet(osMessageQueueId_t mq_id,
     return osUcos3MessageQueueError(err);
   }
 
-  *(void **)msg_ptr = message;
+  if ((message == NULL) || (size != (OS_MSG_SIZE)mq->msg_size)) {
+    /* Defensive: return resource error if message doesn't match expected shape. */
+    return osErrorResource;
+  }
+  memcpy(msg_ptr, message, mq->msg_size);
 
-  OS_ERR post_err;
-  OSSemPost(&mq->space_sem, OS_OPT_POST_1, &post_err);
-  (void)post_err;
+  /* Return block to free stack and release capacity token. */
+  CPU_SR_ALLOC();
+  CPU_CRITICAL_ENTER();
+  if (mq->free_stack != NULL) {
+    mq->free_stack[mq->free_top] = message;
+    mq->free_top++;
+  }
+  CPU_CRITICAL_EXIT();
+
+  (void)OSSemPost(&mq->space_sem, OS_OPT_POST_1, &err);
 
   return osOK;
 }
@@ -1552,9 +1626,8 @@ uint32_t osMessageQueueGetCount(osMessageQueueId_t mq_id) {
     return 0u;
   }
 
-  OS_ERR err;
-  OS_MSG_QTY qty = OSQMsgQtyGet(&mq->queue, &err);
-  return (err == OS_ERR_NONE) ? (uint32_t)qty : 0u;
+  /* uC/OS-III v3.08.02 does not provide OSQMsgQtyGet(); read current entries. */
+  return (uint32_t)mq->queue.MsgQ.NbrEntries;
 }
 
 uint32_t osMessageQueueGetSpace(osMessageQueueId_t mq_id) {
@@ -1563,9 +1636,8 @@ uint32_t osMessageQueueGetSpace(osMessageQueueId_t mq_id) {
     return 0u;
   }
 
-  OS_ERR err;
-  OS_SEM_CTR cnt = OSSemCntGet(&mq->space_sem, &err);
-  return (err == OS_ERR_NONE) ? (uint32_t)cnt : 0u;
+  /* uC/OS-III v3.08.02 does not provide OSSemCntGet(); read current counter. */
+  return (uint32_t)mq->space_sem.Ctr;
 }
 
 osStatus_t osMessageQueueReset(osMessageQueueId_t mq_id) {
@@ -1583,6 +1655,15 @@ osStatus_t osMessageQueueReset(osMessageQueueId_t mq_id) {
   if (err != OS_ERR_NONE) {
     return osUcos3MessageQueueError(err);
   }
+
+  /* Rebuild free list to contain all blocks. */
+  CPU_SR_ALLOC();
+  CPU_CRITICAL_ENTER();
+  for (uint32_t i = 0u; i < mq->msg_count; ++i) {
+    mq->free_stack[i] = (void *)(mq->mq_mem + (i * mq->msg_size));
+  }
+  mq->free_top = mq->msg_count;
+  CPU_CRITICAL_EXIT();
 
   OSSemSet(&mq->space_sem, (OS_SEM_CTR)mq->msg_count, &err);
   return (err == OS_ERR_NONE) ? osOK : osErrorResource;

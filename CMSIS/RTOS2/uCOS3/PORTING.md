@@ -25,7 +25,7 @@
 | 信号量 (`osSemaphoreAttr_t`) | `cb_mem = os_ucos3_semaphore_t[]` | `max_count` ≥ `initial_count` |
 | 事件旗标 (`osEventFlagsAttr_t`) | `cb_mem = os_ucos3_event_flags_t[]` | 等待语义为 WaitAll/WaitAny，支持可选 NoClear |
 | 定时器 (`osTimerAttr_t`) | `cb_mem = os_ucos3_timer_t[]` | `ticks > 0`；`osTimerStart` 会调用 `OSTmrSet` 更新周期 |
-| 消息队列 (`osMessageQueueAttr_t`) | `cb_mem = os_ucos3_message_queue_t[]` | 只接受指针消息 (`msg_size == sizeof(void*)`)，内部自带 `OS_SEM` 控制容量，`mq_mem` 可设为 `NULL` |
+| 消息队列 (`osMessageQueueAttr_t`) | `cb_mem = os_ucos3_message_queue_t[]` (+ free-stack 空间)<br>`mq_mem = uint8_t[]` | 支持任意 `msg_size` 的静态消息队列：必须提供 `mq_mem/mq_size >= msg_count * msg_size`。内部用 `OS_Q` 传递块指针，并通过内部 `OS_SEM` 实现 Put 的阻塞语义。 |
 
 ## 3. 使用约束
 
@@ -34,7 +34,7 @@
   - 仅传递指针；`msg_size` 必须等于指针宽度；
   - 由于 uC/OS-III 的 `OS_Q` 不支持阻塞式 Post，封装层借助内部 `OS_SEM` 在 Put 路径上实现阻塞/无阻塞语义。
 - **Joinable 线程**：`attr_bits` 含 `osThreadJoinable` 时会创建内部 `OS_SEM`；线程退出后需要调用 `osThreadJoin` 以释放控制块上的同步资源。
-- **线程 Flags / 内存池**：尚未封装，相关 API 返回 `osFlagsErrorUnsupported` 或 `NULL`。
+- **线程 Flags / 内存池**：尚未封装，相关 API 返回 `osFlagsErrorUnknown` 或 `NULL`。
 - **Tick 频率**：`osKernelGetTickFreq()`/`osKernelGetSysTimerFreq()` 返回 `OS_CFG_TICK_RATE_HZ`，若 BSP 修改系统节拍需同步更新配置。
 - **ISR 调用**：
   - 查询类 API 与 `osSemaphoreRelease/osEventFlagsSet/Clear` 可在 ISR 中调用；

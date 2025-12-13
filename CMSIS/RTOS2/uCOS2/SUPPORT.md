@@ -2,7 +2,7 @@
 | --- | --- | --- |
 | 内核初始化/启动/时钟 | ✅ | 直接映射到 `OSInit/OSStart/OSTimeGet` 等 API |
 | 线程创建/调度/优先级 | ✅ | 需提供静态控制块与栈；优先级压缩映射至 uC/OS-II 56 个逻辑级别 |
-| 线程挂起/恢复/锁 | ✅ | `osThreadYield/Delay/DelayUntil/Suspend/Resume` 均映射到 `OSTask*` |
+| 线程挂起/恢复/锁 | ✅ | `osThreadYield` 通过 `OS_Sched()` 让出；`osDelay/osDelayUntil` 基于 `OSTimeDly/OSTimeGet`；`osThreadSuspend/Resume` 使用 `OSTask*` |
 | 线程 Flags API | ❌ | uC/OS-II 无线程级旗标功能，无法直接兼容 |
 | 事件 Flags 对象 | ✅ | 基于 `OSFlag*` 实现 `osEventFlagsNew/Set/Clear/Wait/Delete`（线程旗标仍不支持） |
 | Mutex | ✅ | 基于 `OSMutex*`，仅支持非递归互斥；`osMutexRecursive` attr 将返回 `NULL` |
