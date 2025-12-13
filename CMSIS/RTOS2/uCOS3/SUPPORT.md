@@ -2,7 +2,7 @@
 | --- | --- | --- |
 | 内核初始化/启动/时钟 | ✅ | `osKernel*` 映射到 `OSInit/OSStart/OSTimeGet`、`OSSched{Lock,Unlock}` 等接口 |
 | 线程创建/调度/优先级 | ✅ | 线程使用静态 `OS_TCB` + 栈；CMSIS 优先级压缩映射到 uC/OS-III 的 `OS_CFG_PRIO_MAX` 范围 |
-| 线程挂起/恢复/锁 | ✅ | `osThreadYield/Delay/DelayUntil/Suspend/Resume` 基于 `OSTimeDly/OSTask*`；`osKernelLock/Unlock` 使用 `OSSched{Lock,Unlock}` |
+| 线程挂起/恢复/锁 | ✅ | `osThreadYield/Delay/DelayUntil` 基于 `OSTimeDly`（Yield 通过 `OSTimeDly(0)` 实现）；`Suspend/Resume` 基于 `OSTask*`；`osKernelLock/Unlock` 使用 `OSSched{Lock,Unlock}` |
 | 线程 Flags API | ❌ | uC/OS-III 无线程级旗标机制，`osThreadFlags*` 返回 `osFlagsErrorUnsupported` |
 | 事件 Flags 对象 | ✅ | 包装 `OSFlagCreate/Pend/Post/Del`，支持 WaitAll/WaitAny + 可选 NoClear |
 | Mutex | ✅ | 基于 `OSMutex*`，仅支持非递归互斥；`osMutexRecursive` attr 将返回 `NULL` |
