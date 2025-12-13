@@ -9,12 +9,12 @@
 - **互斥量**：包装 `OSMutex*`，仅支持非递归互斥；`timeout == 0` 通过 `OS_OPT_PEND_NON_BLOCKING` 实现立即返回。
 - **信号量**：基于 `OSSem*`，支持计数信号量、无限等待及零等待模式。
 - **定时器**：封装 `OSTmr*`，每次 `osTimerStart` 通过 `OSTmrSet` 更新周期，支持一次性与周期性模式。
-- **事件旗标**：映射到 `OSFlagCreate/Pend/Post/Del`，提供 WaitAll/WaitAny 与可选的 NoClear 语义；线程 Flags API 仍返回 `osFlagsErrorUnsupported`。
+- **事件旗标**：映射到 `OSFlagCreate/Pend/Post/Del`，提供 WaitAll/WaitAny 与可选的 NoClear 语义；线程 Flags API 目前返回 `osFlagsErrorUnknown`。
 - **消息队列**：使用 `OS_Q` + 辅助 `OS_SEM` 限制容量，只允许指针消息 (`msg_size == sizeof(void*)`)，支持阻塞/非阻塞 Put/Get。
 
 ## 未实现或限制
 
-- **线程 Flags (`osThreadFlags*`)**：uC/OS-III 不提供线程私有旗标，接口固定返回 `osFlagsErrorUnsupported`。
+- **线程 Flags (`osThreadFlags*`)**：uC/OS-III 不提供线程私有旗标，接口固定返回 `osFlagsErrorUnknown`。
 - **内存池 (`osMemoryPool*`)**：暂未封装，推荐改用 uC/OS-III 的 `OSMem*` 或其它自定义分配器。
 - **TrustZone/Safety/Watchdog 等高级特性**：内核无对应功能。
 - **对象动态分配**：兼容层不会调用 `malloc`，所有 CMSIS 对象都需要调用者提供静态控制块及（若需要）缓冲区。

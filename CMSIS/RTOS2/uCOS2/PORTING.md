@@ -39,7 +39,7 @@ CMSIS attr 均需要提供 `cb_mem` 和其它缓冲：
   - `msg_size` 必须等于指针宽度；`osMessageQueuePut/Get` 实际上传递的是 `void*`。
   - 用于 `mq_mem` 的缓冲需要能容纳 `msg_count` 个指针，即 `msg_count * sizeof(void*)` bytes。
 - **定时器**：`ticks` 参数必须 > 0；重复 `osTimerStart` 会先删除旧实例再启动新实例。
-- **线程 Flags API**：uC/OS-II 无对应概念，所有 `osThreadFlags*` 函数都会返回 `osFlagsErrorUnsupported`（已在 `SUPPORT.md` 说明）。
+- **线程 Flags API**：uC/OS-II 无对应概念，所有 `osThreadFlags*` 函数都会返回 `osFlagsErrorUnknown`（已在 `SUPPORT.md` 说明）。
 - **内存池 (`osMemoryPool*`)**：因与 uC/OS-II 的内存管理差异较大，暂未提供封装。
 - **ISR 调用**：
   - 查询类 API（`osKernelGetInfo/GetState/GetTick*`、`osThreadGetId/GetName`、`osXxxGetName`）以及 `osSemaphoreRelease/osEventFlagsSet/Clear` 可在中断中使用。

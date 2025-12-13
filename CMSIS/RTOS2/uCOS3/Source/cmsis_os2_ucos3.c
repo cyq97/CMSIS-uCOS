@@ -26,6 +26,8 @@ static inline bool osUcos3IsrDisallowsWait(uint32_t timeout) {
   return osUcos3IrqContext() && (timeout != 0u);
 }
 
+static osStatus_t osUcos3DelayTicks(uint32_t ticks);
+
 static void osUcos3ObjectInit(os_ucos3_object_t *object,
                               os_ucos3_object_type_t type,
                               const char *name,
@@ -477,7 +479,8 @@ int32_t osKernelRestoreLock(int32_t lock) {
 }
 
 uint32_t osKernelGetTickCount(void) {
-  return (uint32_t)OSTimeGet();
+  OS_ERR err;
+  return (uint32_t)OSTimeGet(&err);
 }
 
 uint32_t osKernelGetTickFreq(void) {
@@ -485,7 +488,8 @@ uint32_t osKernelGetTickFreq(void) {
 }
 
 uint32_t osKernelGetSysTimerCount(void) {
-  return (uint32_t)OSTimeGet();
+  OS_ERR err;
+  return (uint32_t)OSTimeGet(&err);
 }
 
 uint32_t osKernelGetSysTimerFreq(void) {
@@ -829,7 +833,8 @@ osStatus_t osDelayUntil(uint32_t ticks) {
     return osError;
   }
 
-  OS_TICK now = OSTimeGet();
+  OS_ERR err;
+  OS_TICK now = OSTimeGet(&err);
   if (ticks <= now) {
     return osErrorParameter;
   }
@@ -842,23 +847,23 @@ osStatus_t osDelayUntil(uint32_t ticks) {
 uint32_t osThreadFlagsSet(osThreadId_t thread_id, uint32_t flags) {
   (void)thread_id;
   (void)flags;
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 uint32_t osThreadFlagsClear(uint32_t flags) {
   (void)flags;
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 uint32_t osThreadFlagsGet(void) {
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 uint32_t osThreadFlagsWait(uint32_t flags, uint32_t options, uint32_t timeout) {
   (void)flags;
   (void)options;
   (void)timeout;
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 /* ==== Mutex Management ==== */

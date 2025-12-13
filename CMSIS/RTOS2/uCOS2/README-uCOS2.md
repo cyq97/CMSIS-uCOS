@@ -9,12 +9,12 @@
 - **Mutex**：基于 `OSMutex*`，仅支持非递归互斥；`timeout == 0` 使用 `OSMutexAccept` 实现非阻塞。
 - **Semaphore**：基于 `OSSem*`，支持计数信号量及立即返回模式 (`OSSemAccept`)。
 - **Timer**：包装 uC/OS-II 软件定时器；`osTimerStart` 传入 ticks，内部创建/重建 `OSTmrCreate` 实例。
-- **Event Flags**：封装 `OSFlagCreate/Accept/Pend/Post`；仅支持等待置位 (WaitAll/Any + NoClear)。线程 Flags API 仍返回 `osFlagsErrorUnsupported`。
+- **Event Flags**：封装 `OSFlagCreate/Accept/Pend/Post`；仅支持等待置位 (WaitAll/Any + NoClear)。线程 Flags API 目前返回 `osFlagsErrorUnknown`。
 - **Message Queue**：基于 uC/OS-II 队列 + 空闲信号量，只允许指针消息 (`msg_size == sizeof(void*)`)；`timeout == 0` 使用 `OSSemAccept/OSQAccept` 实现非阻塞。
 
 ## 未实现或限制的功能
 
-- **线程 Flags** (`osThreadFlags*`)：uC/OS-II 无对应机制，直接返回 `osFlagsErrorUnsupported`。
+- **线程 Flags** (`osThreadFlags*`)：uC/OS-II 无对应机制，直接返回 `osFlagsErrorUnknown`。
 - **内存池** (`osMemoryPool*`)：暂未封装。
 - **高级安全/Zone/Watchdog**：CMSIS-RTOS2 中与 TrustZone、Watchdog 相关的 API 在 uC/OS-II 中无等价实现。
 

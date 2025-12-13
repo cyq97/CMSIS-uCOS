@@ -220,7 +220,7 @@ void osUcos2ThreadJoinRelease(os_ucos2_thread_t *thread) {
   (void)OSSemPost(thread->join_sem);
 }
 
-static os_ucos2_mutex_t *osUcos2MutexFromId(osMutexId_t mutex_id) {
+os_ucos2_mutex_t *osUcos2MutexFromId(osMutexId_t mutex_id) {
   if (mutex_id == NULL) {
     return NULL;
   }
@@ -228,7 +228,7 @@ static os_ucos2_mutex_t *osUcos2MutexFromId(osMutexId_t mutex_id) {
   return (mutex->object.type == osUcos2ObjectMutex) ? mutex : NULL;
 }
 
-static os_ucos2_semaphore_t *osUcos2SemaphoreFromId(osSemaphoreId_t semaphore_id) {
+os_ucos2_semaphore_t *osUcos2SemaphoreFromId(osSemaphoreId_t semaphore_id) {
   if (semaphore_id == NULL) {
     return NULL;
   }
@@ -244,7 +244,7 @@ static os_ucos2_timer_t *osUcos2TimerFromId(osTimerId_t timer_id) {
   return (timer->object.type == osUcos2ObjectTimer) ? timer : NULL;
 }
 
-static os_ucos2_message_queue_t *osUcos2MessageQueueFromId(osMessageQueueId_t mq_id) {
+os_ucos2_message_queue_t *osUcos2MessageQueueFromId(osMessageQueueId_t mq_id) {
   if (mq_id == NULL) {
     return NULL;
   }
@@ -252,7 +252,7 @@ static os_ucos2_message_queue_t *osUcos2MessageQueueFromId(osMessageQueueId_t mq
   return (mq->object.type == osUcos2ObjectMessageQueue) ? mq : NULL;
 }
 
-static os_ucos2_event_flags_t *osUcos2EventFlagsFromId(osEventFlagsId_t ef_id) {
+os_ucos2_event_flags_t *osUcos2EventFlagsFromId(osEventFlagsId_t ef_id) {
   if (ef_id == NULL) {
     return NULL;
   }
@@ -838,23 +838,23 @@ osStatus_t osDelayUntil(uint32_t ticks) {
 uint32_t osThreadFlagsSet(osThreadId_t thread_id, uint32_t flags) {
   (void)thread_id;
   (void)flags;
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 uint32_t osThreadFlagsClear(uint32_t flags) {
   (void)flags;
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 uint32_t osThreadFlagsGet(void) {
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 uint32_t osThreadFlagsWait(uint32_t flags, uint32_t options, uint32_t timeout) {
   (void)flags;
   (void)options;
   (void)timeout;
-  return osFlagsErrorUnsupported;
+  return osFlagsErrorUnknown;
 }
 
 /* ==== Mutex Management ==== */
@@ -1020,7 +1020,6 @@ osSemaphoreId_t osSemaphoreNew(uint32_t max_count,
   memset(sem, 0, sizeof(*sem));
   osUcos2ObjectInit(&sem->object, osUcos2ObjectSemaphore, attr->name, attr->attr_bits);
 
-  INT8U err;
   sem->event = OSSemCreate((INT16U)initial_count);
   if (sem->event == NULL) {
     return NULL;
