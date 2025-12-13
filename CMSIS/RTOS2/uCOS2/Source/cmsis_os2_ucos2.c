@@ -650,7 +650,8 @@ osStatus_t osThreadYield(void) {
     return osError;
   }
 
-  OSSched();
+  /* uC/OS-II exposes the scheduler as OS_Sched() (internal kernel service). */
+  OS_Sched();
   return osOK;
 }
 
@@ -807,7 +808,7 @@ osStatus_t osDelay(uint32_t ticks) {
   }
 
   if (ticks == 0u) {
-    OSSched();
+    OS_Sched();
     return osOK;
   }
 
