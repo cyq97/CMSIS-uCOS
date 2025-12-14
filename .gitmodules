@@ -11,3 +11,9 @@
 	path = libs/uC-OS3
 	url = https://github.com/weston-embedded/uC-OS3.git
 	branch = master
+[submodule "libs/uC-CPU"]
+	path = libs/uC-CPU
+	url = https://github.com/weston-embedded/uC-CPU.git
+[submodule "libs/uC-LIB"]
+	path = libs/uC-LIB
+	url = https://github.com/weston-embedded/uC-LIB.git
