@@ -1591,7 +1591,28 @@ osStatus_t osMessageQueueGet(osMessageQueueId_t mq_id,
   }
 
   if ((message == NULL) || (size != (OS_MSG_SIZE)mq->msg_size)) {
-    /* Defensive: return resource error if message doesn't match expected shape. */
+    /* Defensive: message doesn't match expected shape.
+     * We already removed one entry from the underlying OS_Q, so we must avoid
+     * leaking capacity tokens (space_sem) and, when possible, return the block
+     * to our static pool to keep OS_Q and OS_SEM in sync.
+     */
+    if (message != NULL) {
+      /* Only return pointers that belong to our caller-provided pool. */
+      const uintptr_t base = (uintptr_t)mq->mq_mem;
+      const uintptr_t end  = base + ((uintptr_t)mq->msg_count * (uintptr_t)mq->msg_size);
+      const uintptr_t ptr  = (uintptr_t)message;
+      if ((ptr >= base) && (ptr < end) && (((ptr - base) % (uintptr_t)mq->msg_size) == 0u)) {
+        CPU_SR_ALLOC();
+        CPU_CRITICAL_ENTER();
+        if ((mq->free_stack != NULL) && (mq->free_top < mq->msg_count)) {
+          mq->free_stack[mq->free_top] = message;
+          mq->free_top++;
+        }
+        CPU_CRITICAL_EXIT();
+      }
+    }
+
+    (void)OSSemPost(&mq->space_sem, OS_OPT_POST_1, &err);
     return osErrorResource;
   }
   memcpy(msg_ptr, message, mq->msg_size);
